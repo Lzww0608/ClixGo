@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/logger"
-	"gocli/pkg/text"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/text"
 )
 
 func NewTextCmd() *cobra.Command {

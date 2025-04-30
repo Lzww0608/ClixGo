@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"github.com/yourusername/gocli/taskmanager/internal/task"
+	"github.com/Lzww0608/ClixGo/internal/task"
 )
 
 var (

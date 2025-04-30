@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"gocli/pkg/alias"
-	"gocli/pkg/config"
-	"gocli/pkg/history"
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/alias"
+	"github.com/Lzww0608/ClixGo/pkg/config"
+	"github.com/Lzww0608/ClixGo/pkg/history"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 // ExecuteCommand 执行单个命令

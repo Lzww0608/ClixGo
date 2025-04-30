@@ -6,8 +6,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/history"
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/history"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 func NewHistoryCmd() *cobra.Command {

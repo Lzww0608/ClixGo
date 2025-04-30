@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/go-ping/ping"
 	"github.com/gorilla/websocket"
 	"github.com/miekg/dns"

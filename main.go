@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"gocli/cmd/cli"
+	"github.com/Lzww0608/ClixGo/cmd/cli"
 )
 
 func main() {

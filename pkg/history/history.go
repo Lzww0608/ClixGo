@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 type CommandHistory struct {

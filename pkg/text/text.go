@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode"
 
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 // SortLines 对文本行进行排序

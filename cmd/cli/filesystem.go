@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/filesystem"
+	"github.com/Lzww0608/ClixGo/pkg/filesystem"
 )
 
 func NewFilesystemCmd() *cobra.Command {

@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/Lzww0608/ClixGo/taskmanager/internal/task"
+	"github.com/Lzww0608/ClixGo/internal/task"
 )
 
 func main() {

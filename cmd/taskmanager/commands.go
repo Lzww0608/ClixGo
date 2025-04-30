@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/Lzww0608/ClixGo/taskmanager/internal/task"
+	"github.com/Lzww0608/ClixGo/internal/task"
 )
 
 // createCommand 创建任务命令

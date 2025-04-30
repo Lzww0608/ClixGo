@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/commands"
-	"gocli/pkg/logger"
-	"gocli/pkg/utils"
+	"github.com/Lzww0608/ClixGo/pkg/commands"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/utils"
 )
 
 func NewSequentialCmd() *cobra.Command {

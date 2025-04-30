@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 type Alias struct {

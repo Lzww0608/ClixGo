@@ -6,8 +6,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/alias"
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/alias"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 func NewAliasCmd() *cobra.Command {

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/security"
+	"github.com/Lzww0608/ClixGo/pkg/security"
 )
 
 var (

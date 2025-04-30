@@ -5,10 +5,11 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/alias"
-	"gocli/pkg/completion"
-	"gocli/pkg/config"
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/alias"
+	"github.com/Lzww0608/ClixGo/pkg/completion"
+	"github.com/Lzww0608/ClixGo/pkg/config"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/cmd/task"
 )
 
 var rootCmd = &cobra.Command{
@@ -25,6 +26,7 @@ var rootCmd = &cobra.Command{
 - 命令历史记录
 - 命令别名
 - 命令补全
+- 后台任务管理
 `,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		configPath, _ := cmd.Flags().GetString("config")
@@ -57,6 +59,9 @@ func init() {
 	rootCmd.AddCommand(NewPipeCmd())
 	rootCmd.AddCommand(NewHistoryCmd())
 	rootCmd.AddCommand(NewAliasCmd())
+	
+	// 添加任务管理命令
+	rootCmd.AddCommand(task.Command())
 	
 	// 添加补全命令
 	rootCmd.AddCommand(&cobra.Command{

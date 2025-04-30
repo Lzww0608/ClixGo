@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/logger"
-	"gocli/pkg/network"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/network"
 )
 
 func NewNetworkCmd() *cobra.Command {

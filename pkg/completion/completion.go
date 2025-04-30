@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gocli/pkg/alias"
+	"github.com/Lzww0608/ClixGo/pkg/alias"
 )
 
 func GenerateCompletionScript(cmd *cobra.Command) error {

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"gocli/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 // AWKCommand 执行AWK命令

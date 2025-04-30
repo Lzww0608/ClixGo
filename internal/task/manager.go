@@ -43,7 +43,7 @@ type Task struct {
 type TaskManager struct {
 	mu          sync.RWMutex
 	tasks       map[string]*Task
-	subscribers map[string][]chan<- *Task
+	subscribers map[string][]chan *Task
 	logger      *zap.Logger
 	storePath   string
 }
@@ -56,7 +56,7 @@ func NewTaskManager(logger *zap.Logger, storePath string) (*TaskManager, error) 
 
 	tm := &TaskManager{
 		tasks:       make(map[string]*Task),
-		subscribers: make(map[string][]chan<- *Task),
+		subscribers: make(map[string][]chan *Task),
 		logger:      logger,
 		storePath:   storePath,
 	}
