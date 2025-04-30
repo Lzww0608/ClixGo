@@ -1,0 +1,26 @@
+{
+    "name": "translate",
+    "version": "1.0.0",
+    "description": "文本翻译插件",
+    "author": "gocli",
+    "commands": [
+        {
+            "name": "translate",
+            "description": "翻译文本",
+            "subcommands": [
+                {
+                    "name": "text",
+                    "description": "翻译指定文本"
+                },
+                {
+                    "name": "file",
+                    "description": "翻译文件内容"
+                },
+                {
+                    "name": "detect",
+                    "description": "检测文本语言"
+                }
+            ]
+        }
+    ]
+}

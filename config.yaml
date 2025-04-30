@@ -1,0 +1,5 @@
+log_level: debug
+log_file: gocli.log
+
+commands:
+  timeout: 30 
