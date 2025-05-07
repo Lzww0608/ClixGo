@@ -15,20 +15,20 @@ import (
 type ConfigSource string
 
 const (
-	SourceDefault    ConfigSource = "default"
-	SourceFile       ConfigSource = "file"
-	SourceEnv        ConfigSource = "env"
-	SourceFlag       ConfigSource = "flag"
-	SourceRemote     ConfigSource = "remote"
-	SourceEncrypted  ConfigSource = "encrypted"
+	SourceDefault   ConfigSource = "default"
+	SourceFile      ConfigSource = "file"
+	SourceEnv       ConfigSource = "env"
+	SourceFlag      ConfigSource = "flag"
+	SourceRemote    ConfigSource = "remote"
+	SourceEncrypted ConfigSource = "encrypted"
 )
 
 // ConfigValue 表示配置值
 type ConfigValue struct {
-	Value      interface{}
-	Source     ConfigSource
+	Value       interface{}
+	Source      ConfigSource
 	IsEncrypted bool
-	Metadata   map[string]interface{}
+	Metadata    map[string]interface{}
 }
 
 // ConfigManager 管理配置
@@ -38,6 +38,37 @@ type ConfigManager struct {
 	mu         sync.RWMutex
 	configPath string
 	profiles   []string
+}
+
+// 全局配置管理器实例
+var instance *ConfigManager
+var once sync.Once
+
+// InitConfig 初始化全局配置
+func InitConfig(configPath string) error {
+	var err error
+	once.Do(func() {
+		if configPath == "" {
+			homeDir, e := os.UserHomeDir()
+			if e != nil {
+				err = fmt.Errorf("获取用户目录失败: %v", e)
+				return
+			}
+			configPath = filepath.Join(homeDir, ".gocli", "config.yaml")
+		}
+
+		instance = NewConfigManager(configPath)
+		err = instance.Load()
+	})
+	return err
+}
+
+// GetInstance 获取全局配置实例
+func GetInstance() *ConfigManager {
+	if instance == nil {
+		panic("配置未初始化，请先调用 InitConfig")
+	}
+	return instance
 }
 
 // NewConfigManager 创建新的配置管理器
@@ -77,10 +108,10 @@ func (cm *ConfigManager) setDefaults() {
 
 	for key, value := range defaults {
 		cm.values[key] = ConfigValue{
-			Value:      value,
-			Source:     SourceDefault,
+			Value:       value,
+			Source:      SourceDefault,
 			IsEncrypted: false,
-			Metadata:   make(map[string]interface{}),
+			Metadata:    make(map[string]interface{}),
 		}
 	}
 }
@@ -105,10 +136,10 @@ func (cm *ConfigManager) Load() error {
 	for _, key := range cm.viper.AllKeys() {
 		value := cm.viper.Get(key)
 		cm.values[key] = ConfigValue{
-			Value:      value,
-			Source:     SourceFile,
+			Value:       value,
+			Source:      SourceFile,
 			IsEncrypted: false,
-			Metadata:   make(map[string]interface{}),
+			Metadata:    make(map[string]interface{}),
 		}
 	}
 
@@ -117,10 +148,10 @@ func (cm *ConfigManager) Load() error {
 		envKey := strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
 		if envValue := os.Getenv(envKey); envValue != "" {
 			cm.values[key] = ConfigValue{
-				Value:      envValue,
-				Source:     SourceEnv,
+				Value:       envValue,
+				Source:      SourceEnv,
 				IsEncrypted: false,
-				Metadata:   make(map[string]interface{}),
+				Metadata:    make(map[string]interface{}),
 			}
 		}
 	}
@@ -178,10 +209,10 @@ func (cm *ConfigManager) Set(key string, value interface{}, source ConfigSource)
 	defer cm.mu.Unlock()
 
 	cm.values[key] = ConfigValue{
-		Value:      value,
-		Source:     source,
+		Value:       value,
+		Source:      source,
 		IsEncrypted: false,
-		Metadata:   make(map[string]interface{}),
+		Metadata:    make(map[string]interface{}),
 	}
 }
 
@@ -275,4 +306,4 @@ func (cm *ConfigManager) GetProfiles() []string {
 // GetConfigPath 获取配置文件路径
 func (cm *ConfigManager) GetConfigPath() string {
 	return cm.configPath
-} 
+}

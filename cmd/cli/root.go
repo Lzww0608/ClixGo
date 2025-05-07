@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
+	"github.com/Lzww0608/ClixGo/cmd/task"
 	"github.com/Lzww0608/ClixGo/pkg/alias"
 	"github.com/Lzww0608/ClixGo/pkg/completion"
 	"github.com/Lzww0608/ClixGo/pkg/config"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
-	"github.com/Lzww0608/ClixGo/cmd/task"
+	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
@@ -49,7 +49,7 @@ func Execute() error {
 func init() {
 	// 在这里添加全局标志
 	rootCmd.PersistentFlags().StringP("config", "c", "", "配置文件路径")
-	
+
 	// 添加子命令
 	rootCmd.AddCommand(NewSequentialCmd())
 	rootCmd.AddCommand(NewParallelCmd())
@@ -59,10 +59,11 @@ func init() {
 	rootCmd.AddCommand(NewPipeCmd())
 	rootCmd.AddCommand(NewHistoryCmd())
 	rootCmd.AddCommand(NewAliasCmd())
-	
+	rootCmd.AddCommand(NewNetworkCmd())
+
 	// 添加任务管理命令
 	rootCmd.AddCommand(task.Command())
-	
+
 	// 添加补全命令
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "completion",
