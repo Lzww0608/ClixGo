@@ -7,22 +7,23 @@ import (
 	"strings"
 
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // AWKCommand 执行AWK命令
 func AWKCommand(input string, pattern string) (string, error) {
 	cmd := exec.Command("awk", pattern)
 	cmd.Stdin = strings.NewReader(input)
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	
+
 	err := cmd.Run()
 	if err != nil {
-		logger.Error("AWK命令执行失败", logger.Log.Error(err))
+		logger.Error("AWK命令执行失败", zap.Error(err))
 		return "", err
 	}
-	
+
 	return out.String(), nil
 }
 
@@ -30,16 +31,16 @@ func AWKCommand(input string, pattern string) (string, error) {
 func GrepCommand(input string, pattern string) (string, error) {
 	cmd := exec.Command("grep", pattern)
 	cmd.Stdin = strings.NewReader(input)
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	
+
 	err := cmd.Run()
 	if err != nil {
-		logger.Error("grep命令执行失败", logger.Log.Error(err))
+		logger.Error("grep命令执行失败", zap.Error(err))
 		return "", err
 	}
-	
+
 	return out.String(), nil
 }
 
@@ -47,16 +48,16 @@ func GrepCommand(input string, pattern string) (string, error) {
 func SedCommand(input string, pattern string) (string, error) {
 	cmd := exec.Command("sed", pattern)
 	cmd.Stdin = strings.NewReader(input)
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	
+
 	err := cmd.Run()
 	if err != nil {
-		logger.Error("sed命令执行失败", logger.Log.Error(err))
+		logger.Error("sed命令执行失败", zap.Error(err))
 		return "", err
 	}
-	
+
 	return out.String(), nil
 }
 
@@ -87,11 +88,11 @@ func PipeCommands(commands []string) (string, error) {
 		cmd.Stdout = &out
 		err = cmd.Run()
 		if err != nil {
-			logger.Error("管道命令执行失败", logger.Log.Error(err))
+			logger.Error("管道命令执行失败", zap.Error(err))
 			return "", err
 		}
 		lastOutput = out
 	}
 
 	return lastOutput.String(), nil
-} 
+}

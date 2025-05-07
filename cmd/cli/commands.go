@@ -2,12 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/Lzww0608/ClixGo/pkg/commands"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/Lzww0608/ClixGo/pkg/utils"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 func NewSequentialCmd() *cobra.Command {
@@ -21,7 +21,7 @@ func NewSequentialCmd() *cobra.Command {
 			if err := utils.ValidateCommands(commandList); err != nil {
 				return err
 			}
-			logger.Info("开始串行执行命令", logger.Log.String("commands", args[0]))
+			logger.Info("开始串行执行命令", zap.String("commands", args[0]))
 			return commands.ExecuteCommandsSequentially(commandList)
 		},
 	}
@@ -38,7 +38,7 @@ func NewParallelCmd() *cobra.Command {
 			if err := utils.ValidateCommands(commandList); err != nil {
 				return err
 			}
-			logger.Info("开始并行执行命令", logger.Log.String("commands", args[0]))
+			logger.Info("开始并行执行命令", zap.String("commands", args[0]))
 			return commands.ExecuteCommandsParallel(commandList)
 		},
 	}
@@ -53,7 +53,7 @@ func NewAWKCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := args[0]
 			pattern := args[1]
-			logger.Info("执行AWK命令", logger.Log.String("pattern", pattern))
+			logger.Info("执行AWK命令", zap.String("pattern", pattern))
 			result, err := commands.AWKCommand(input, pattern)
 			if err != nil {
 				return err
@@ -73,7 +73,7 @@ func NewGrepCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := args[0]
 			pattern := args[1]
-			logger.Info("执行grep命令", logger.Log.String("pattern", pattern))
+			logger.Info("执行grep命令", zap.String("pattern", pattern))
 			result, err := commands.GrepCommand(input, pattern)
 			if err != nil {
 				return err
@@ -93,7 +93,7 @@ func NewSedCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := args[0]
 			pattern := args[1]
-			logger.Info("执行sed命令", logger.Log.String("pattern", pattern))
+			logger.Info("执行sed命令", zap.String("pattern", pattern))
 			result, err := commands.SedCommand(input, pattern)
 			if err != nil {
 				return err
@@ -115,7 +115,7 @@ func NewPipeCmd() *cobra.Command {
 			if err := utils.ValidateCommands(commandList); err != nil {
 				return err
 			}
-			logger.Info("开始执行管道命令", logger.Log.String("commands", args[0]))
+			logger.Info("开始执行管道命令", zap.String("commands", args[0]))
 			result, err := commands.PipeCommands(commandList)
 			if err != nil {
 				return err
@@ -124,4 +124,4 @@ func NewPipeCmd() *cobra.Command {
 			return nil
 		},
 	}
-} 
+}

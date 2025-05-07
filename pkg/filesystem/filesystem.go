@@ -11,27 +11,28 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
 // FileInfo 表示文件信息
 type FileInfo struct {
-	Name         string
-	Path         string
-	Size         int64
-	Mode         fs.FileMode
-	ModTime      time.Time
-	IsDir        bool
-	IsSymlink    bool
-	Owner        string
-	Group        string
-	Checksum     map[string]string
-	Permissions  string
-	ContentType  string
+	Name        string
+	Path        string
+	Size        int64
+	Mode        fs.FileMode
+	ModTime     time.Time
+	IsDir       bool
+	IsSymlink   bool
+	Owner       string
+	Group       string
+	Checksum    map[string]string
+	Permissions string
+	ContentType string
 }
 
 // FileOperation 表示文件操作结果
@@ -609,4 +610,4 @@ func extractFromTar(reader *tar.Reader, output string) FileOperation {
 	}
 
 	return FileOperation{Success: true, Message: "解压成功"}
-} 
+}

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/Lzww0608/ClixGo/pkg/alias"
 )
 
 func GenerateCompletionScript(cmd *cobra.Command) error {
@@ -90,4 +89,4 @@ complete -F _gocli_completion gocli
 	}
 
 	return nil
-} 
+}

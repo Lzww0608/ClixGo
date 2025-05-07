@@ -5,9 +5,10 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/spf13/cobra"
 	"github.com/Lzww0608/ClixGo/pkg/alias"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 func NewAliasCmd() *cobra.Command {
@@ -27,7 +28,7 @@ func NewAliasCmd() *cobra.Command {
 			if err := alias.AddAlias(name, command); err != nil {
 				return err
 			}
-			logger.Info("别名添加成功", logger.Log.String("name", name), logger.Log.String("command", command))
+			logger.Info("别名添加成功", zap.String("name", name), zap.String("command", command))
 			return nil
 		},
 	})
@@ -41,7 +42,7 @@ func NewAliasCmd() *cobra.Command {
 			if err := alias.RemoveAlias(name); err != nil {
 				return err
 			}
-			logger.Info("别名删除成功", logger.Log.String("name", name))
+			logger.Info("别名删除成功", zap.String("name", name))
 			return nil
 		},
 	})
@@ -64,4 +65,4 @@ func NewAliasCmd() *cobra.Command {
 	})
 
 	return cmd
-} 
+}

@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 type Alias struct {
@@ -97,4 +95,4 @@ func ExpandCommand(command string) string {
 	}
 
 	return command
-} 
+}

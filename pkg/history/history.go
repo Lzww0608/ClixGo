@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 type CommandHistory struct {
@@ -78,4 +76,4 @@ func ClearHistory() error {
 		return fmt.Errorf("清除历史记录失败: %v", err)
 	}
 	return nil
-} 
+}

@@ -3,13 +3,11 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/Lzww0608/ClixGo/pkg/filesystem"
+	"github.com/spf13/cobra"
 )
 
 func NewFilesystemCmd() *cobra.Command {
@@ -251,4 +249,4 @@ func NewFilesystemCmd() *cobra.Command {
 	cmd.Commands()[10].Flags().BoolP("case-sensitive", "c", false, "区分大小写")
 
 	return cmd
-} 
+}

@@ -3,15 +3,11 @@ package text
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
-	"unicode"
-
-	"github.com/Lzww0608/ClixGo/pkg/logger"
 )
 
 // SortLines 对文本行进行排序
@@ -138,4 +134,4 @@ func FormatJSON(input string) (string, error) {
 func ValidateJSON(input string) error {
 	var js interface{}
 	return json.Unmarshal([]byte(input), &js)
-} 
+}

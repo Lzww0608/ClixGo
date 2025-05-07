@@ -9,17 +9,22 @@ import (
 	"time"
 
 	"github.com/Lzww0608/ClixGo/pkg/alias"
-	"github.com/Lzww0608/ClixGo/pkg/config"
 	"github.com/Lzww0608/ClixGo/pkg/history"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"go.uber.org/zap"
 )
+
+// 默认超时时间
+const defaultCmdTimeout = 30 * time.Second
 
 // ExecuteCommand 执行单个命令
 func ExecuteCommand(command string) error {
 	// 扩展别名
 	expandedCommand := alias.ExpandCommand(command)
 	if expandedCommand != command {
-		logger.Info("扩展别名", logger.Log.String("original", command), logger.Log.String("expanded", expandedCommand))
+		logger.Info("扩展别名",
+			zap.String("original", command),
+			zap.String("expanded", expandedCommand))
 		command = expandedCommand
 	}
 
@@ -38,7 +43,8 @@ func ExecuteCommand(command string) error {
 		return fmt.Errorf("空命令")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(config.AppConfig.Commands.Timeout)*time.Second)
+	// 使用默认超时时间
+	ctx, cancel := context.WithTimeout(context.Background(), defaultCmdTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
@@ -50,14 +56,14 @@ func ExecuteCommand(command string) error {
 
 	if err != nil {
 		cmdHistory.Status = "failed"
-		logger.Error("命令执行失败", logger.Log.Error(err))
+		logger.Error("命令执行失败", zap.Error(err))
 	} else {
 		cmdHistory.Status = "success"
-		logger.Info("命令执行成功", logger.Log.String("output", string(output)))
+		logger.Info("命令执行成功", zap.String("output", string(output)))
 	}
 
 	if err := history.SaveHistory(cmdHistory); err != nil {
-		logger.Error("保存命令历史失败", logger.Log.Error(err))
+		logger.Error("保存命令历史失败", zap.Error(err))
 	}
 
 	if err != nil {

@@ -93,6 +93,7 @@ func (tm *TaskManager) CreateTask(name, description string, metadata interface{}
 
 // StartTask 启动任务
 func (tm *TaskManager) StartTask(ctx context.Context, taskID string, fn func(context.Context, *Task) error) error {
+	// 获取并更新任务状态，使用锁保护
 	tm.mu.Lock()
 	task, ok := tm.tasks[taskID]
 	if !ok {
@@ -105,17 +106,36 @@ func (tm *TaskManager) StartTask(ctx context.Context, taskID string, fn func(con
 		return errors.New("任务状态不正确")
 	}
 
+	// 更新任务状态
 	now := time.Now()
 	task.Status = TaskStatusRunning
 	task.StartedAt = &now
+	task.Progress = 0.0 // 确保进度初始化为0
+
+	// 创建任务副本，避免并发修改
+	taskCopy := *task
 	tm.mu.Unlock()
 
+	// 通知订阅者
 	tm.notifySubscribers(task)
 
 	// 在后台执行任务
 	go func() {
-		err := fn(ctx, task)
+		// 使用任务副本调用执行函数
+		err := fn(ctx, &taskCopy)
+
+		// 任务完成后，更新原始任务的状态
 		tm.mu.Lock()
+		// 重新获取任务，确保更新的是最新状态
+		task, ok := tm.tasks[taskID]
+		if !ok {
+			tm.mu.Unlock()
+			if tm.logger != nil {
+				tm.logger.Error("任务完成后未找到任务", zap.String("task_id", taskID))
+			}
+			return
+		}
+
 		now := time.Now()
 		task.FinishedAt = &now
 		if err != nil {
@@ -123,6 +143,7 @@ func (tm *TaskManager) StartTask(ctx context.Context, taskID string, fn func(con
 			task.Error = err.Error()
 		} else {
 			task.Status = TaskStatusComplete
+			task.Progress = 1.0 // 确保进度设为100%
 		}
 		tm.mu.Unlock()
 
@@ -135,16 +156,36 @@ func (tm *TaskManager) StartTask(ctx context.Context, taskID string, fn func(con
 
 // UpdateTaskProgress 更新任务进度
 func (tm *TaskManager) UpdateTaskProgress(taskID string, progress float64) error {
+	// 使用读写锁保护对任务的访问
 	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
 	task, ok := tm.tasks[taskID]
 	if !ok {
+		tm.mu.Unlock()
 		return errors.New("任务不存在")
 	}
 
+	// 确保进度在有效范围内
+	if progress < 0 {
+		progress = 0
+	} else if progress > 1 {
+		progress = 1
+	}
+
+	// 只有在运行状态才能更新进度
+	if task.Status != TaskStatusRunning {
+		tm.mu.Unlock()
+		return errors.New("任务不在运行状态，无法更新进度")
+	}
+
+	// 更新进度
 	task.Progress = progress
-	tm.notifySubscribers(task)
+
+	// 创建任务副本用于通知
+	taskCopy := *task
+	tm.mu.Unlock()
+
+	// 通知订阅者（使用任务副本）
+	tm.notifySubscribers(&taskCopy)
 	return nil
 }
 
@@ -180,7 +221,9 @@ func (tm *TaskManager) GetTask(taskID string) (*Task, error) {
 		return nil, errors.New("任务不存在")
 	}
 
-	return task, nil
+	// 返回任务副本，避免外部修改影响内部状态
+	taskCopy := *task
+	return &taskCopy, nil
 }
 
 // ListTasks 列出所有任务
@@ -190,7 +233,9 @@ func (tm *TaskManager) ListTasks() []*Task {
 
 	tasks := make([]*Task, 0, len(tm.tasks))
 	for _, task := range tm.tasks {
-		tasks = append(tasks, task)
+		// 创建任务副本
+		taskCopy := *task
+		tasks = append(tasks, &taskCopy)
 	}
 	return tasks
 }
@@ -201,6 +246,18 @@ func (tm *TaskManager) SubscribeTask(taskID string) chan *Task {
 	tm.mu.Lock()
 	tm.subscribers[taskID] = append(tm.subscribers[taskID], ch)
 	tm.mu.Unlock()
+
+	// 立即发送当前状态
+	task, err := tm.GetTask(taskID)
+	if err == nil {
+		select {
+		case ch <- task:
+			// 成功发送
+		default:
+			// 如果通道已满，忽略
+		}
+	}
+
 	return ch
 }
 
@@ -223,13 +280,19 @@ func (tm *TaskManager) UnsubscribeTask(taskID string, ch chan *Task) {
 func (tm *TaskManager) notifySubscribers(task *Task) {
 	tm.mu.RLock()
 	subs := tm.subscribers[task.ID]
+	// 创建一个任务副本，防止并发修改导致的问题
+	taskCopy := *task
 	tm.mu.RUnlock()
 
 	for _, ch := range subs {
 		select {
-		case ch <- task:
+		case ch <- &taskCopy:
+			// 成功发送
 		default:
-			// 如果通道已满，跳过
+			// 如果通道已满，记录日志但不阻塞
+			if tm.logger != nil {
+				tm.logger.Warn("通知订阅者失败：通道已满", zap.String("task_id", task.ID))
+			}
 		}
 	}
 }
@@ -283,4 +346,4 @@ func (tm *TaskManager) periodicSave() {
 			tm.logger.Error("保存任务状态失败", zap.Error(err))
 		}
 	}
-} 
+}

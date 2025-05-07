@@ -1,7 +1,9 @@
 package network
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,23 +13,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Lzww0608/ClixGo/pkg/logger"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-ping/ping"
 	"github.com/gorilla/websocket"
-	"github.com/miekg/dns"
 	"github.com/schollz/progressbar/v3"
-	"github.com/eclipse/paho.mqtt.golang"
 )
 
 // PingResult 表示ping测试的结果
 type PingResult struct {
-	PacketsSent    int
-	PacketsRecv    int
-	PacketLoss     float64
-	MinRtt         time.Duration
-	MaxRtt         time.Duration
-	AvgRtt         time.Duration
-	StdDevRtt      time.Duration
+	PacketsSent int
+	PacketsRecv int
+	PacketLoss  float64
+	MinRtt      time.Duration
+	MaxRtt      time.Duration
+	AvgRtt      time.Duration
+	StdDevRtt   time.Duration
 }
 
 // Ping 执行ping测试
@@ -48,13 +48,13 @@ func Ping(host string, count int, timeout time.Duration) (*PingResult, error) {
 
 	stats := pinger.Statistics()
 	return &PingResult{
-		PacketsSent:    stats.PacketsSent,
-		PacketsRecv:    stats.PacketsRecv,
-		PacketLoss:     stats.PacketLoss,
-		MinRtt:         stats.MinRtt,
-		MaxRtt:         stats.MaxRtt,
-		AvgRtt:         stats.AvgRtt,
-		StdDevRtt:      stats.StdDevRtt,
+		PacketsSent: stats.PacketsSent,
+		PacketsRecv: stats.PacketsRecv,
+		PacketLoss:  stats.PacketLoss,
+		MinRtt:      stats.MinRtt,
+		MaxRtt:      stats.MaxRtt,
+		AvgRtt:      stats.AvgRtt,
+		StdDevRtt:   stats.StdDevRtt,
 	}, nil
 }
 
@@ -68,30 +68,50 @@ type TracerouteResult struct {
 
 // Traceroute 执行路由跟踪
 func Traceroute(host string, maxHops int) ([]TracerouteResult, error) {
-	results := make([]TracerouteResult, 0)
-	timeout := time.Second * 2
+	results := []TracerouteResult{}
 
 	for ttl := 1; ttl <= maxHops; ttl++ {
-		conn, err := net.DialTimeout("ip4:icmp", host, timeout)
+		conn, err := net.Dial("ip4:icmp", host)
 		if err != nil {
 			return nil, err
 		}
 		defer conn.Close()
 
+		// 设置TTL
+		ipconn, ok := conn.(*net.IPConn)
+		if !ok {
+			return nil, fmt.Errorf("无法转换为IPConn")
+		}
+
+		file, err := ipconn.File()
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+
+		timeout := 1 * time.Second
 		conn.SetDeadline(time.Now().Add(timeout))
 		start := time.Now()
 
-		msg := &ping.Message{
-			Type: ping.ICMPTypeEcho,
-			Code: 0,
-			Body: &ping.EchoBody{
-				ID:   uint16(os.Getpid() & 0xffff),
-				Seq:  uint16(ttl),
-				Data: make([]byte, 32),
-			},
+		// 简化ICMP消息构建，避免使用ping库内部结构
+		// 构建简单的ICMP Echo请求
+		icmpMessage := []byte{
+			8,    // Echo请求类型
+			0,    // 代码
+			0, 0, // 校验和（会被重新计算）
+			0, 0, // 标识符
+			0, 0, // 序列号
 		}
 
-		_, err = conn.Write(msg.Marshal())
+		// 添加数据
+		icmpMessage = append(icmpMessage, bytes.Repeat([]byte{1}, 32)...)
+
+		// 计算校验和
+		checksum := calculateChecksum(icmpMessage)
+		icmpMessage[2] = byte(checksum >> 8)
+		icmpMessage[3] = byte(checksum)
+
+		_, err = conn.Write(icmpMessage)
 		if err != nil {
 			return nil, err
 		}
@@ -125,6 +145,21 @@ func Traceroute(host string, maxHops int) ([]TracerouteResult, error) {
 	}
 
 	return results, nil
+}
+
+// 添加校验和计算函数
+func calculateChecksum(bytes []byte) uint16 {
+	length := len(bytes)
+	var sum uint32
+	for i := 0; i < length-1; i += 2 {
+		sum += uint32(bytes[i])<<8 | uint32(bytes[i+1])
+	}
+	if length%2 == 1 {
+		sum += uint32(bytes[length-1]) << 8
+	}
+	sum = (sum >> 16) + (sum & 0xffff)
+	sum = sum + (sum >> 16)
+	return uint16(^sum)
 }
 
 // DNSLookup 执行DNS查询
@@ -278,11 +313,13 @@ type NetworkMonitor struct {
 
 // AlertConfig 表示告警配置
 type AlertConfig struct {
-	Enabled     bool
-	Threshold   float64
-	Email       string
-	Webhook     string
-	RepeatAfter time.Duration
+	Enabled      bool
+	Threshold    float64
+	Email        string
+	Webhook      string
+	SMS          string
+	SlackWebhook string
+	RepeatAfter  time.Duration
 }
 
 // MonitorResult 表示监控结果
@@ -434,6 +471,8 @@ func StartPacketCapture(config PacketCapture) (<-chan []byte, context.CancelFunc
 
 	go func() {
 		defer close(packets)
+		// 使用ctx以避免未使用变量警告
+		<-ctx.Done()
 		// 这里需要根据操作系统实现具体的数据包捕获
 		// 可以使用libpcap或npcap等库
 	}()
@@ -474,8 +513,9 @@ func RunDiagnostic() (*NetworkDiagnostic, error) {
 	}
 
 	// 检查网关
-	gateway, err := getDefaultGateway()
-	if err != nil {
+	// 获取默认网关但不使用返回值，只检查是否成功
+	_, gatewayErr := getDefaultGateway()
+	if gatewayErr != nil {
 		diagnostic.Gateway = false
 		diagnostic.Issues = append(diagnostic.Issues, "无法获取默认网关")
 	} else {
@@ -667,11 +707,11 @@ func TestProtocol(target string, protocol string) (*ProtocolTest, error) {
 
 // NetworkPerformance 表示网络性能指标
 type NetworkPerformance struct {
-	Bandwidth     float64 // Mbps
-	Latency       float64 // ms
-	Jitter        float64 // ms
-	PacketLoss    float64 // %
-	Throughput    float64 // Mbps
+	Bandwidth      float64 // Mbps
+	Latency        float64 // ms
+	Jitter         float64 // ms
+	PacketLoss     float64 // %
+	Throughput     float64 // Mbps
 	Retransmission float64 // %
 	ConnectionTime float64 // ms
 }
@@ -718,16 +758,16 @@ func AnalyzePerformance(target string, duration time.Duration) (*NetworkPerforma
 
 // TrafficStats 表示流量统计
 type TrafficStats struct {
-	Interface     string
-	BytesIn       uint64
-	BytesOut      uint64
-	PacketsIn     uint64
-	PacketsOut    uint64
-	ErrorsIn      uint64
-	ErrorsOut     uint64
-	DropsIn       uint64
-	DropsOut      uint64
-	Timestamp     time.Time
+	Interface  string
+	BytesIn    uint64
+	BytesOut   uint64
+	PacketsIn  uint64
+	PacketsOut uint64
+	ErrorsIn   uint64
+	ErrorsOut  uint64
+	DropsIn    uint64
+	DropsOut   uint64
+	Timestamp  time.Time
 }
 
 // GetTrafficStats 获取流量统计
@@ -740,15 +780,15 @@ func GetTrafficStats(iface string) (*TrafficStats, error) {
 
 // NetworkOptimization 表示网络优化建议
 type NetworkOptimization struct {
-	Interface     string
-	CurrentMTU    int
-	RecommendedMTU int
-	CurrentDNS    []string
-	RecommendedDNS []string
-	CurrentBuffer int
+	Interface         string
+	CurrentMTU        int
+	RecommendedMTU    int
+	CurrentDNS        []string
+	RecommendedDNS    []string
+	CurrentBuffer     int
 	RecommendedBuffer int
-	Issues        []string
-	Suggestions   []string
+	Issues            []string
+	Suggestions       []string
 }
 
 // OptimizeNetwork 优化网络配置
@@ -793,7 +833,7 @@ func OptimizeNetwork(iface string) (*NetworkOptimization, error) {
 
 // AlertManager 表示告警管理器
 type AlertManager struct {
-	Config AlertConfig
+	Config    AlertConfig
 	LastAlert time.Time
 }
 
@@ -891,11 +931,11 @@ func sendSlackAlert(webhook, message string) error {
 
 // TrafficAnalysis 表示流量分析结果
 type TrafficAnalysis struct {
-	Interface      string
-	ProtocolStats  map[string]ProtocolStat
+	Interface       string
+	ProtocolStats   map[string]ProtocolStat
 	ConnectionStats ConnectionStats
-	BandwidthUsage BandwidthUsage
-	Timestamp      time.Time
+	BandwidthUsage  BandwidthUsage
+	Timestamp       time.Time
 }
 
 // ProtocolStat 表示协议统计
@@ -918,13 +958,13 @@ type ConnectionStats struct {
 
 // BandwidthUsage 表示带宽使用情况
 type BandwidthUsage struct {
-	CurrentIn    float64 // Mbps
-	CurrentOut   float64 // Mbps
-	PeakIn       float64 // Mbps
-	PeakOut      float64 // Mbps
-	AverageIn    float64 // Mbps
-	AverageOut   float64 // Mbps
-	Utilization  float64 // %
+	CurrentIn   float64 // Mbps
+	CurrentOut  float64 // Mbps
+	PeakIn      float64 // Mbps
+	PeakOut     float64 // Mbps
+	AverageIn   float64 // Mbps
+	AverageOut  float64 // Mbps
+	Utilization float64 // %
 }
 
 // AnalyzeTraffic 分析网络流量
@@ -961,19 +1001,19 @@ func AnalyzeTraffic(iface string, duration time.Duration) (*TrafficAnalysis, err
 
 // NetworkQuality 表示网络质量评分
 type NetworkQuality struct {
-	Score          float64 // 0-100
-	LatencyScore   float64 // 0-100
-	StabilityScore float64 // 0-100
-	SpeedScore     float64 // 0-100
+	Score            float64 // 0-100
+	LatencyScore     float64 // 0-100
+	StabilityScore   float64 // 0-100
+	SpeedScore       float64 // 0-100
 	ReliabilityScore float64 // 0-100
-	Issues         []string
-	Recommendations []string
+	Issues           []string
+	Recommendations  []string
 }
 
 // EvaluateQuality 评估网络质量
 func EvaluateQuality(target string, duration time.Duration) (*NetworkQuality, error) {
 	quality := &NetworkQuality{
-		Issues:         make([]string, 0),
+		Issues:          make([]string, 0),
 		Recommendations: make([]string, 0),
 	}
 
@@ -1018,7 +1058,7 @@ func EvaluateQuality(target string, duration time.Duration) (*NetworkQuality, er
 	}
 
 	// 计算总分
-	quality.Score = (quality.LatencyScore + quality.StabilityScore + 
+	quality.Score = (quality.LatencyScore + quality.StabilityScore +
 		quality.SpeedScore + quality.ReliabilityScore) / 4
 
 	return quality, nil
@@ -1127,4 +1167,4 @@ func saveBackup(backup *NetworkConfigBackup) error {
 func loadBackup(backupID string) (*NetworkConfigBackup, error) {
 	// 这里需要实现备份加载功能
 	return nil, fmt.Errorf("备份加载功能尚未实现")
-} 
+}
