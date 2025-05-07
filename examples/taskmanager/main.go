@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/Lzww0608/ClixGo/internal/task"
+	"github.com/Lzww0608/ClixGo/pkg/task"
 )
 
 func main() {
@@ -38,12 +38,12 @@ func main() {
 
 	// 在后台监控任务进度
 	go func() {
-		for task := range updates {
-			fmt.Printf("\r任务进度: %.1f%% | 状态: %s", task.Progress*100, task.Status)
-			if task.Status == task.TaskStatusComplete || task.Status == task.TaskStatusFailed {
+		for updatedTask := range updates {
+			fmt.Printf("\r任务进度: %.1f%% | 状态: %s", updatedTask.Progress*100, updatedTask.Status)
+			if updatedTask.Status == task.TaskStatusComplete || updatedTask.Status == task.TaskStatusFailed {
 				fmt.Println()
-				if task.Error != "" {
-					fmt.Printf("错误: %s\n", task.Error)
+				if updatedTask.Error != "" {
+					fmt.Printf("错误: %s\n", updatedTask.Error)
 				}
 				return
 			}
@@ -62,7 +62,7 @@ func main() {
 			default:
 				// 模拟工作
 				time.Sleep(100 * time.Millisecond)
-				
+
 				// 随机模拟错误
 				if rand.Float64() < 0.01 {
 					return fmt.Errorf("随机错误在步骤 %d", i)
@@ -83,18 +83,18 @@ func main() {
 	}
 
 	// 等待任务完成
-	task, err := tm.GetTask(t.ID)
+	taskInfo, err := tm.GetTask(t.ID)
 	if err != nil {
 		logger.Fatal("获取任务失败", zap.Error(err))
 	}
 
-	for task.Status != task.TaskStatusComplete && task.Status != task.TaskStatusFailed {
+	for taskInfo.Status != task.TaskStatusComplete && taskInfo.Status != task.TaskStatusFailed {
 		time.Sleep(100 * time.Millisecond)
-		task, err = tm.GetTask(t.ID)
+		taskInfo, err = tm.GetTask(t.ID)
 		if err != nil {
 			logger.Fatal("获取任务失败", zap.Error(err))
 		}
 	}
 
 	fmt.Println("\n任务完成!")
-} 
+}
