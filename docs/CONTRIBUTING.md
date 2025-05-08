@@ -1,6 +1,6 @@
-# GoCLI 开发者指南
+# ClixGo 开发者指南
 
-本文档旨在帮助开发者快速上手 GoCLI 项目的开发工作。
+本文档旨在帮助开发者快速上手 ClixGo 项目的开发工作。
 
 ## 开发环境设置
 
@@ -22,8 +22,8 @@ go install github.com/golang/mock/mockgen@latest
 ### 3. 项目设置
 ```bash
 # 克隆项目
-git clone https://github.com/yourusername/gocli.git
-cd gocli
+git clone https://github.com/Lzww0608/ClixGo.git
+cd ClixGo
 
 # 安装依赖
 go mod download
