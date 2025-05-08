@@ -19,10 +19,10 @@
 export TRANSLATE_API_KEY="your-api-key"
 
 # 创建配置目录
-mkdir -p ~/.gocli
+mkdir -p ~/.clixgo
 
 # 创建配置文件
-cat > ~/.gocli/translate.yaml << EOF
+cat > ~/.clixgo/translate.yaml << EOF
 api_key: ${TRANSLATE_API_KEY}
 default_source: auto
 default_target: zh
@@ -42,30 +42,30 @@ EOF
 
 ```bash
 # 翻译文本
-gocli translate text "Hello, World" --source en --target zh
+ClixGo translate text "Hello, World" --source en --target zh
 
 # 检测语言
-gocli translate detect "Bonjour le monde"
+ClixGo translate detect "Bonjour le monde"
 ```
 
 ### 文件翻译
 
 ```bash
 # 翻译单个文件
-gocli translate file document.txt --source en --target zh
+ClixGo translate file document.txt --source en --target zh
 
 # 翻译整个目录
-gocli translate dir ./documents --source en --target zh
+ClixGo translate dir ./documents --source en --target zh
 ```
 
 ### 配置管理
 
 ```bash
 # 查看当前配置
-gocli translate config show
+ClixGo translate config show
 
 # 修改配置
-gocli translate config set --key default_target --value ja
+ClixGo translate config set --key default_target --value ja
 ```
 
 ## 配置选项
@@ -155,20 +155,20 @@ go tool cover -html=coverage.out
 
 2. 配置文件不存在
    ```bash
-   mkdir -p ~/.gocli
-   touch ~/.gocli/translate.yaml
+   mkdir -p ~/.clixgo
+   touch ~/.clixgo/translate.yaml
    ```
 
 3. 请求超时
    ```bash
    # 增加超时时间
-   gocli translate config set --key timeout --value 60s
+   ClixGo translate config set --key timeout --value 60s
    ```
 
 4. 内存使用过高
    ```bash
    # 减小分块大小
-   gocli translate config set --key chunk_size --value 500
+   ClixGo translate config set --key chunk_size --value 500
    ```
 
 ## 贡献指南

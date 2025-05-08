@@ -13,10 +13,14 @@ type Alias struct {
 	Command string `json:"command"`
 }
 
-var aliasFile = filepath.Join(os.Getenv("HOME"), ".clixgo_aliases.json")
+var aliasFile = filepath.Join(os.Getenv("HOME"), ".clixgo", "aliases.json")
 var aliases = make(map[string]string)
 
 func InitAliases() error {
+	if err := os.MkdirAll(filepath.Dir(aliasFile), 0755); err != nil {
+		return fmt.Errorf("创建别名配置目录失败: %v", err)
+	}
+
 	if _, err := os.Stat(aliasFile); os.IsNotExist(err) {
 		return nil
 	}

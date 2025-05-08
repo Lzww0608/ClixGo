@@ -17,9 +17,14 @@ type CommandHistory struct {
 	Duration  string    `json:"duration"`
 }
 
-var historyFile = filepath.Join(os.Getenv("HOME"), ".clixgo_history.json")
+var historyFile = filepath.Join(os.Getenv("HOME"), ".clixgo", "history.json")
 
 func SaveHistory(cmd *CommandHistory) error {
+	// 确保目录存在
+	if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
+		return fmt.Errorf("创建历史记录目录失败: %v", err)
+	}
+
 	// 读取现有历史记录
 	var history []CommandHistory
 	if _, err := os.Stat(historyFile); err == nil {
