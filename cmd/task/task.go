@@ -32,7 +32,7 @@ func init() {
 		logger.Fatal("获取用户目录失败", zap.Error(err))
 	}
 
-	storePath := filepath.Join(homeDir, ".gocli", "tasks.json")
+	storePath := filepath.Join(homeDir, ".clixgo", "tasks.json")
 	taskManager, err = task.NewTaskManager(logger, storePath)
 	if err != nil {
 		logger.Fatal("初始化任务管理器失败", zap.Error(err))
@@ -203,4 +203,4 @@ func watchCommand() *cobra.Command {
 	}
 
 	return cmd
-} 
+}

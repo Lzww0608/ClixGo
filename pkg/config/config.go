@@ -54,7 +54,7 @@ func InitConfig(configPath string) error {
 				err = fmt.Errorf("获取用户目录失败: %v", e)
 				return
 			}
-			configPath = filepath.Join(homeDir, ".gocli", "config.yaml")
+			configPath = filepath.Join(homeDir, ".clixgo", "config.yaml")
 		}
 
 		instance = NewConfigManager(configPath)
@@ -98,7 +98,7 @@ func (cm *ConfigManager) setDefaults() {
 
 	// 设置默认值
 	defaults := map[string]interface{}{
-		"app.name":        "gocli",
+		"app.name":        "ClixGo",
 		"app.version":     "1.0.0",
 		"app.environment": "development",
 		"log.level":       "info",

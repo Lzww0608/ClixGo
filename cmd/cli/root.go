@@ -13,9 +13,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "gocli",
+	Use:   "ClixGo",
 	Short: "一个强大的命令行工具",
-	Long: `gocli是一个功能强大的命令行工具，支持：
+	Long: `ClixGo是一个功能强大的命令行工具，支持：
 - 串行执行多个命令
 - 并行执行多个命令
 - 自定义命令执行

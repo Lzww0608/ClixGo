@@ -2,13 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
-	"github.com/spf13/cobra"
-	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/Lzww0608/ClixGo/pkg/network"
+	"github.com/spf13/cobra"
 )
 
 func NewNetworkCmd() *cobra.Command {
@@ -19,7 +17,7 @@ func NewNetworkCmd() *cobra.Command {
 	}
 
 	// Ping命令
-	cmd.AddCommand(&cobra.Command{
+	pingCmd := &cobra.Command{
 		Use:   "ping",
 		Short: "测试网络连接",
 		Args:  cobra.ExactArgs(1),
@@ -33,12 +31,13 @@ func NewNetworkCmd() *cobra.Command {
 			fmt.Println(result)
 			return nil
 		},
-	})
-	cmd.Commands()[0].Flags().IntP("count", "c", 4, "发送的ping包数量")
-	cmd.Commands()[0].Flags().DurationP("timeout", "t", 5*time.Second, "超时时间")
+	}
+	pingCmd.Flags().Int("count", 4, "发送的ping包数量")
+	pingCmd.Flags().DurationP("timeout", "t", 5*time.Second, "超时时间")
+	cmd.AddCommand(pingCmd)
 
 	// Traceroute命令
-	cmd.AddCommand(&cobra.Command{
+	tracerouteCmd := &cobra.Command{
 		Use:   "traceroute",
 		Short: "跟踪网络路径",
 		Args:  cobra.ExactArgs(1),
@@ -51,11 +50,12 @@ func NewNetworkCmd() *cobra.Command {
 			fmt.Println(result)
 			return nil
 		},
-	})
-	cmd.Commands()[1].Flags().IntP("max-hops", "m", 30, "最大跳数")
+	}
+	tracerouteCmd.Flags().IntP("max-hops", "m", 30, "最大跳数")
+	cmd.AddCommand(tracerouteCmd)
 
 	// DNS查询命令
-	cmd.AddCommand(&cobra.Command{
+	dnsCmd := &cobra.Command{
 		Use:   "dns",
 		Short: "DNS查询",
 		Args:  cobra.ExactArgs(1),
@@ -69,10 +69,11 @@ func NewNetworkCmd() *cobra.Command {
 			}
 			return nil
 		},
-	})
+	}
+	cmd.AddCommand(dnsCmd)
 
 	// HTTP请求命令
-	cmd.AddCommand(&cobra.Command{
+	httpCmd := &cobra.Command{
 		Use:   "http",
 		Short: "HTTP请求",
 		Args:  cobra.ExactArgs(1),
@@ -85,11 +86,12 @@ func NewNetworkCmd() *cobra.Command {
 			fmt.Println(response)
 			return nil
 		},
-	})
-	cmd.Commands()[3].Flags().DurationP("timeout", "t", 10*time.Second, "超时时间")
+	}
+	httpCmd.Flags().DurationP("timeout", "t", 10*time.Second, "超时时间")
+	cmd.AddCommand(httpCmd)
 
 	// 端口检查命令
-	cmd.AddCommand(&cobra.Command{
+	portCmd := &cobra.Command{
 		Use:   "port",
 		Short: "检查端口",
 		Args:  cobra.ExactArgs(2),
@@ -110,11 +112,12 @@ func NewNetworkCmd() *cobra.Command {
 			}
 			return nil
 		},
-	})
-	cmd.Commands()[4].Flags().DurationP("timeout", "t", 5*time.Second, "超时时间")
+	}
+	portCmd.Flags().DurationP("timeout", "t", 5*time.Second, "超时时间")
+	cmd.AddCommand(portCmd)
 
 	// IP信息查询命令
-	cmd.AddCommand(&cobra.Command{
+	ipinfoCmd := &cobra.Command{
 		Use:   "ipinfo",
 		Short: "查询IP信息",
 		Args:  cobra.ExactArgs(1),
@@ -127,10 +130,11 @@ func NewNetworkCmd() *cobra.Command {
 				info.IP, info.Country, info.Region, info.City, info.ISP)
 			return nil
 		},
-	})
+	}
+	cmd.AddCommand(ipinfoCmd)
 
 	// 文件下载命令
-	cmd.AddCommand(&cobra.Command{
+	downloadCmd := &cobra.Command{
 		Use:   "download",
 		Short: "下载文件",
 		Args:  cobra.ExactArgs(2),
@@ -143,11 +147,12 @@ func NewNetworkCmd() *cobra.Command {
 			fmt.Printf("文件已下载到: %s\n", args[1])
 			return nil
 		},
-	})
-	cmd.Commands()[6].Flags().DurationP("timeout", "t", 30*time.Second, "超时时间")
+	}
+	downloadCmd.Flags().DurationP("timeout", "t", 30*time.Second, "超时时间")
+	cmd.AddCommand(downloadCmd)
 
 	// SSL证书检查命令
-	cmd.AddCommand(&cobra.Command{
+	sslCmd := &cobra.Command{
 		Use:   "ssl",
 		Short: "检查SSL证书",
 		Args:  cobra.ExactArgs(1),
@@ -160,10 +165,11 @@ func NewNetworkCmd() *cobra.Command {
 				info.Issuer, info.Expiry.Format("2006-01-02"))
 			return nil
 		},
-	})
+	}
+	cmd.AddCommand(sslCmd)
 
 	// 网络速度测试命令
-	cmd.AddCommand(&cobra.Command{
+	speedtestCmd := &cobra.Command{
 		Use:   "speedtest",
 		Short: "网络速度测试",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -175,10 +181,11 @@ func NewNetworkCmd() *cobra.Command {
 				result.Download, result.Upload)
 			return nil
 		},
-	})
+	}
+	cmd.AddCommand(speedtestCmd)
 
 	// 网络监控命令
-	cmd.AddCommand(&cobra.Command{
+	monitorCmd := &cobra.Command{
 		Use:   "monitor",
 		Short: "网络监控",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -219,15 +226,16 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[8].Flags().DurationP("interval", "i", 5*time.Second, "监控间隔")
-	cmd.Commands()[8].Flags().DurationP("timeout", "t", 2*time.Second, "超时时间")
-	cmd.Commands()[8].Flags().Float64P("threshold", "T", 50.0, "告警阈值(ms)")
-	cmd.Commands()[8].Flags().StringP("email", "e", "", "告警邮箱")
-	cmd.Commands()[8].Flags().StringP("webhook", "w", "", "告警Webhook")
+	}
+	monitorCmd.Flags().DurationP("interval", "i", 5*time.Second, "监控间隔")
+	monitorCmd.Flags().DurationP("timeout", "t", 2*time.Second, "超时时间")
+	monitorCmd.Flags().Float64P("threshold", "T", 50.0, "告警阈值(ms)")
+	monitorCmd.Flags().StringP("email", "e", "", "告警邮箱")
+	monitorCmd.Flags().StringP("webhook", "w", "", "告警Webhook")
+	cmd.AddCommand(monitorCmd)
 
 	// 网络配置命令
-	cmd.AddCommand(&cobra.Command{
+	configCmd := &cobra.Command{
 		Use:   "config",
 		Short: "网络配置",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -246,11 +254,12 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[9].Flags().StringP("interface", "i", "", "网络接口名称")
+	}
+	configCmd.Flags().StringP("interface", "i", "", "网络接口名称")
+	cmd.AddCommand(configCmd)
 
 	// 带宽测试命令
-	cmd.AddCommand(&cobra.Command{
+	bandwidthCmd := &cobra.Command{
 		Use:   "bandwidth",
 		Short: "带宽测试",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -267,11 +276,12 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[10].Flags().StringP("server", "s", "", "测试服务器地址")
+	}
+	bandwidthCmd.Flags().StringP("server", "s", "", "测试服务器地址")
+	cmd.AddCommand(bandwidthCmd)
 
 	// 数据包捕获命令
-	cmd.AddCommand(&cobra.Command{
+	captureCmd := &cobra.Command{
 		Use:   "capture",
 		Short: "数据包捕获",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -296,14 +306,15 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[11].Flags().StringP("interface", "i", "", "网络接口名称")
-	cmd.Commands()[11].Flags().StringP("filter", "f", "", "过滤表达式")
-	cmd.Commands()[11].Flags().IntP("count", "c", 0, "捕获数量(0表示无限)")
-	cmd.Commands()[11].Flags().DurationP("timeout", "t", 0, "超时时间(0表示无限)")
+	}
+	captureCmd.Flags().StringP("interface", "i", "", "网络接口名称")
+	captureCmd.Flags().StringP("filter", "f", "", "过滤表达式")
+	captureCmd.Flags().IntP("count", "c", 0, "捕获数量(0表示无限)")
+	captureCmd.Flags().DurationP("timeout", "t", 0, "超时时间(0表示无限)")
+	cmd.AddCommand(captureCmd)
 
 	// 网络诊断命令
-	cmd.AddCommand(&cobra.Command{
+	diagnoseCmd := &cobra.Command{
 		Use:   "diagnose",
 		Short: "网络诊断",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -327,10 +338,11 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
+	}
+	cmd.AddCommand(diagnoseCmd)
 
 	// 协议测试命令
-	cmd.AddCommand(&cobra.Command{
+	protocolCmd := &cobra.Command{
 		Use:   "protocol",
 		Short: "协议测试",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -353,10 +365,11 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
+	}
+	cmd.AddCommand(protocolCmd)
 
 	// 性能分析命令
-	cmd.AddCommand(&cobra.Command{
+	performanceCmd := &cobra.Command{
 		Use:   "performance",
 		Short: "性能分析",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -381,11 +394,12 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[13].Flags().DurationP("duration", "d", 10*time.Second, "测试持续时间")
+	}
+	performanceCmd.Flags().DurationP("duration", "d", 10*time.Second, "测试持续时间")
+	cmd.AddCommand(performanceCmd)
 
 	// 流量统计命令
-	cmd.AddCommand(&cobra.Command{
+	trafficCmd := &cobra.Command{
 		Use:   "traffic",
 		Short: "流量统计",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -400,25 +414,28 @@ func NewNetworkCmd() *cobra.Command {
 				case <-ticker.C:
 					stats, err := network.GetTrafficStats(iface)
 					if err != nil {
-						return err
+						fmt.Printf("错误: %v\n", err)
+						continue
 					}
-
-					fmt.Printf("\n[%s] 接口 %s 流量统计:\n", 
+					fmt.Printf("\n[%s] 接口 %s 流量统计:\n",
 						stats.Timestamp.Format("2006-01-02 15:04:05"),
 						stats.Interface)
 					fmt.Printf("接收: %d 字节, %d 数据包\n", stats.BytesIn, stats.PacketsIn)
 					fmt.Printf("发送: %d 字节, %d 数据包\n", stats.BytesOut, stats.PacketsOut)
 					fmt.Printf("错误: 接收 %d, 发送 %d\n", stats.ErrorsIn, stats.ErrorsOut)
 					fmt.Printf("丢包: 接收 %d, 发送 %d\n", stats.DropsIn, stats.DropsOut)
+				case <-cmd.Context().Done():
+					return nil
 				}
 			}
 		},
-	})
-	cmd.Commands()[14].Flags().StringP("interface", "i", "", "网络接口名称")
-	cmd.Commands()[14].Flags().DurationP("interval", "t", 1*time.Second, "统计间隔")
+	}
+	trafficCmd.Flags().StringP("interface", "i", "", "网络接口名称")
+	trafficCmd.Flags().DurationP("interval", "I", 1*time.Second, "统计间隔")
+	cmd.AddCommand(trafficCmd)
 
 	// 网络优化命令
-	cmd.AddCommand(&cobra.Command{
+	optimizeCmd := &cobra.Command{
 		Use:   "optimize",
 		Short: "网络优化",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -460,12 +477,13 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[15].Flags().StringP("interface", "i", "", "网络接口名称")
-	cmd.Commands()[15].Flags().BoolP("auto", "a", false, "自动应用优化建议")
+	}
+	optimizeCmd.Flags().StringP("interface", "i", "", "网络接口名称")
+	optimizeCmd.Flags().BoolP("auto", "a", false, "自动应用优化建议")
+	cmd.AddCommand(optimizeCmd)
 
 	// 告警配置命令
-	cmd.AddCommand(&cobra.Command{
+	alertCmd := &cobra.Command{
 		Use:   "alert",
 		Short: "告警配置",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -477,13 +495,13 @@ func NewNetworkCmd() *cobra.Command {
 			repeat, _ := cmd.Flags().GetDuration("repeat")
 
 			config := network.AlertConfig{
-				Enabled:     true,
-				Threshold:   threshold,
-				Email:       email,
-				Webhook:     webhook,
-				SMS:         sms,
+				Enabled:      true,
+				Threshold:    threshold,
+				Email:        email,
+				Webhook:      webhook,
+				SMS:          sms,
 				SlackWebhook: slack,
-				RepeatAfter: repeat,
+				RepeatAfter:  repeat,
 			}
 
 			manager := network.NewAlertManager(config)
@@ -495,16 +513,17 @@ func NewNetworkCmd() *cobra.Command {
 			fmt.Println("告警配置已更新并测试")
 			return nil
 		},
-	})
-	cmd.Commands()[16].Flags().StringP("email", "e", "", "告警邮箱")
-	cmd.Commands()[16].Flags().StringP("webhook", "w", "", "告警Webhook")
-	cmd.Commands()[16].Flags().StringP("sms", "s", "", "告警手机号")
-	cmd.Commands()[16].Flags().StringP("slack", "S", "", "Slack Webhook")
-	cmd.Commands()[16].Flags().Float64P("threshold", "t", 50.0, "告警阈值(ms)")
-	cmd.Commands()[16].Flags().DurationP("repeat", "r", 1*time.Hour, "重复告警间隔")
+	}
+	alertCmd.Flags().StringP("email", "e", "", "告警邮箱")
+	alertCmd.Flags().StringP("webhook", "w", "", "告警Webhook")
+	alertCmd.Flags().StringP("sms", "s", "", "告警手机号")
+	alertCmd.Flags().StringP("slack", "S", "", "Slack Webhook")
+	alertCmd.Flags().Float64P("threshold", "t", 50.0, "告警阈值(ms)")
+	alertCmd.Flags().DurationP("repeat", "r", 1*time.Hour, "重复告警间隔")
+	cmd.AddCommand(alertCmd)
 
 	// 流量分析命令
-	cmd.AddCommand(&cobra.Command{
+	analyzeCmd := &cobra.Command{
 		Use:   "analyze",
 		Short: "流量分析",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -546,12 +565,13 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[17].Flags().StringP("interface", "i", "", "网络接口名称")
-	cmd.Commands()[17].Flags().DurationP("duration", "d", 1*time.Minute, "分析持续时间")
+	}
+	analyzeCmd.Flags().StringP("interface", "i", "", "网络接口名称")
+	analyzeCmd.Flags().DurationP("duration", "d", 1*time.Minute, "分析持续时间")
+	cmd.AddCommand(analyzeCmd)
 
 	// 网络质量评估命令
-	cmd.AddCommand(&cobra.Command{
+	qualityCmd := &cobra.Command{
 		Use:   "quality",
 		Short: "网络质量评估",
 		Args:  cobra.ExactArgs(1),
@@ -586,11 +606,12 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[18].Flags().DurationP("duration", "d", 5*time.Minute, "评估持续时间")
+	}
+	qualityCmd.Flags().DurationP("duration", "d", 1*time.Minute, "评估持续时间")
+	cmd.AddCommand(qualityCmd)
 
 	// 网络配置备份命令
-	cmd.AddCommand(&cobra.Command{
+	backupCmd := &cobra.Command{
 		Use:   "backup",
 		Short: "网络配置备份",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -608,11 +629,12 @@ func NewNetworkCmd() *cobra.Command {
 
 			return nil
 		},
-	})
-	cmd.Commands()[19].Flags().StringP("interface", "i", "", "网络接口名称")
+	}
+	backupCmd.Flags().StringP("interface", "i", "", "网络接口名称")
+	cmd.AddCommand(backupCmd)
 
 	// 网络配置恢复命令
-	cmd.AddCommand(&cobra.Command{
+	restoreCmd := &cobra.Command{
 		Use:   "restore",
 		Short: "恢复网络配置",
 		Args:  cobra.ExactArgs(1),
@@ -624,7 +646,8 @@ func NewNetworkCmd() *cobra.Command {
 			fmt.Printf("已从备份 %s 恢复网络配置\n", args[0])
 			return nil
 		},
-	})
+	}
+	cmd.AddCommand(restoreCmd)
 
 	return cmd
-} 
+}

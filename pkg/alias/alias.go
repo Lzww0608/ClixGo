@@ -13,7 +13,7 @@ type Alias struct {
 	Command string `json:"command"`
 }
 
-var aliasFile = filepath.Join(os.Getenv("HOME"), ".gocli_aliases.json")
+var aliasFile = filepath.Join(os.Getenv("HOME"), ".clixgo_aliases.json")
 var aliases = make(map[string]string)
 
 func InitAliases() error {

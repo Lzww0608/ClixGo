@@ -17,7 +17,7 @@ type CommandHistory struct {
 	Duration  string    `json:"duration"`
 }
 
-var historyFile = filepath.Join(os.Getenv("HOME"), ".gocli_history.json")
+var historyFile = filepath.Join(os.Getenv("HOME"), ".clixgo_history.json")
 
 func SaveHistory(cmd *CommandHistory) error {
 	// 读取现有历史记录

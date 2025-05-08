@@ -2,12 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 
-	"github.com/spf13/cobra"
-	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/Lzww0608/ClixGo/pkg/text"
+	"github.com/spf13/cobra"
 )
 
 func NewTextCmd() *cobra.Command {
@@ -177,4 +174,4 @@ func NewTextCmd() *cobra.Command {
 	})
 
 	return cmd
-} 
+}
