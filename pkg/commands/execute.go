@@ -88,19 +88,37 @@ func ExecuteCommandsParallel(commands []string) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(commands))
 
+	// 如果没有命令要执行，直接返回成功
+	if len(commands) == 0 {
+		return nil
+	}
+
 	for _, cmd := range commands {
 		wg.Add(1)
 		go func(command string) {
 			defer wg.Done()
 			if err := ExecuteCommand(command); err != nil {
-				errChan <- err
+				// 使用非阻塞发送避免死锁
+				select {
+				case errChan <- err:
+					// 成功发送错误
+				default:
+					// 通道已满，记录日志但不阻塞
+					logger.Error("无法将错误发送到错误通道，可能通道已满",
+						zap.String("command", command),
+						zap.Error(err))
+				}
 			}
 		}(cmd)
 	}
 
-	wg.Wait()
-	close(errChan)
+	// 使用额外的goroutine关闭通道，确保所有任务完成后才关闭
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
 
+	// 收集第一个错误并返回
 	for err := range errChan {
 		if err != nil {
 			return err

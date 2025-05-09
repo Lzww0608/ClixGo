@@ -20,7 +20,9 @@ func AWKCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		logger.Error("AWK命令执行失败", zap.Error(err))
+		if logger.Log != nil {
+			logger.Error("AWK命令执行失败", zap.Error(err))
+		}
 		return "", err
 	}
 
@@ -37,7 +39,9 @@ func GrepCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		logger.Error("grep命令执行失败", zap.Error(err))
+		if logger.Log != nil {
+			logger.Error("grep命令执行失败", zap.Error(err))
+		}
 		return "", err
 	}
 
@@ -54,7 +58,9 @@ func SedCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		logger.Error("sed命令执行失败", zap.Error(err))
+		if logger.Log != nil {
+			logger.Error("sed命令执行失败", zap.Error(err))
+		}
 		return "", err
 	}
 
@@ -67,7 +73,6 @@ func PipeCommands(commands []string) (string, error) {
 		return "", fmt.Errorf("没有提供命令")
 	}
 
-	var cmd *exec.Cmd
 	var lastOutput bytes.Buffer
 	var err error
 
@@ -77,21 +82,23 @@ func PipeCommands(commands []string) (string, error) {
 			return "", fmt.Errorf("空命令")
 		}
 
-		if i == 0 {
-			cmd = exec.Command(parts[0], parts[1:]...)
-		} else {
-			cmd = exec.Command(parts[0], parts[1:]...)
+		cmd := exec.Command(parts[0], parts[1:]...)
+
+		if i > 0 {
+			// 只有从第二个命令开始才使用前一个命令的输出作为输入
 			cmd.Stdin = strings.NewReader(lastOutput.String())
 		}
 
-		var out bytes.Buffer
-		cmd.Stdout = &out
+		lastOutput.Reset()
+		cmd.Stdout = &lastOutput
+
 		err = cmd.Run()
 		if err != nil {
-			logger.Error("管道命令执行失败", zap.Error(err))
+			if logger.Log != nil {
+				logger.Error("管道命令执行失败", zap.Error(err), zap.String("command", command))
+			}
 			return "", err
 		}
-		lastOutput = out
 	}
 
 	return lastOutput.String(), nil
