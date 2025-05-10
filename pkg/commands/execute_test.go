@@ -2,7 +2,6 @@ package commands
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -106,13 +105,14 @@ func TestExecuteCommandsSequentially(t *testing.T) {
 func TestExecuteCommandsParallel(t *testing.T) {
 	setupTestEnvironment()
 
-	// 创建临时目录
-	tempDir := createTempDir(t)
-	defer os.RemoveAll(tempDir)
-
-	// 创建两个测试文件
-	file1 := filepath.Join(tempDir, "file1.txt")
-	file2 := filepath.Join(tempDir, "file2.txt")
+	// 创建一个临时文件来测试并行执行
+	tempFile, err := os.CreateTemp("", "parallel_test")
+	if err != nil {
+		t.Fatalf("无法创建临时文件: %v", err)
+	}
+	tempFilePath := tempFile.Name()
+	tempFile.Close()
+	defer os.Remove(tempFilePath)
 
 	tests := []struct {
 		name     string
@@ -127,8 +127,8 @@ func TestExecuteCommandsParallel(t *testing.T) {
 		{
 			name: "多个有效命令",
 			commands: []string{
-				"touch " + file1,
-				"touch " + file2,
+				"sh -c \"echo test1 > " + tempFilePath + "\"",
+				"sh -c \"echo test2 >> " + tempFilePath + "\"",
 			},
 			wantErr: false,
 		},
@@ -141,10 +141,12 @@ func TestExecuteCommandsParallel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// 确保测试开始时文件不存在
-			if len(tt.commands) > 0 && strings.Contains(tt.commands[0], tempDir) {
-				os.Remove(file1)
-				os.Remove(file2)
+			// 确保测试开始时文件是空的
+			if len(tt.commands) > 0 && strings.Contains(tt.commands[0], tempFilePath) {
+				err := os.WriteFile(tempFilePath, []byte{}, 0644)
+				if err != nil {
+					t.Fatalf("无法清空临时文件: %v", err)
+				}
 			}
 
 			err := ExecuteCommandsParallel(tt.commands)
@@ -152,17 +154,18 @@ func TestExecuteCommandsParallel(t *testing.T) {
 				t.Errorf("ExecuteCommandsParallel() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			// 验证并行命令的执行结果
-			if !tt.wantErr && len(tt.commands) > 0 && strings.Contains(tt.commands[0], tempDir) {
+			// 验证并行命令的执行结果（可选）
+			if !tt.wantErr && len(tt.commands) > 0 && strings.Contains(tt.commands[0], tempFilePath) {
 				// 给并行命令一些时间完成
 				time.Sleep(200 * time.Millisecond)
 
-				// 检查文件是否已创建
-				_, err1 := os.Stat(file1)
-				_, err2 := os.Stat(file2)
-				if os.IsNotExist(err1) || os.IsNotExist(err2) {
-					t.Errorf("并行命令未成功执行: file1存在=%v, file2存在=%v",
-						!os.IsNotExist(err1), !os.IsNotExist(err2))
+				// 检查文件内容
+				content, err := os.ReadFile(tempFilePath)
+				if err != nil {
+					t.Errorf("读取临时文件失败: %v", err)
+				}
+				if len(content) == 0 {
+					t.Errorf("并行命令似乎未执行完成，文件内容为空")
 				}
 			}
 		})

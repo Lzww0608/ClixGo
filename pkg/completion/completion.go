@@ -8,6 +8,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// 包级可替换的文件操作函数，便于测试mock
+var (
+	userHomeDirFunc = os.UserHomeDir
+	mkdirAllFunc    = os.MkdirAll
+	writeFileFunc   = os.WriteFile
+	readFileFunc    = os.ReadFile
+	openFileFunc    = os.OpenFile
+)
+
 func GenerateCompletionScript(cmd *cobra.Command) error {
 	// 生成bash补全脚本
 	bashScript := `#!/bin/bash
@@ -36,10 +45,10 @@ _gocli_completion() {
     subcommands=$(gocli --help 2>&1 | awk '/^  [a-z]/ {print $1}')
     
     # 添加别名到补全列表
-    local aliases
-    for name := range alias.ListAliases() {
+    local aliases=""
+    for name in $(gocli alias list 2>/dev/null | awk '{print $1}'); do
         aliases="$aliases $name"
-    }
+    done
 
     COMPREPLY=($(compgen -W "${subcommands} ${aliases}" -- "${cur}"))
 }
@@ -48,20 +57,20 @@ complete -F _gocli_completion gocli
 `
 
 	// 获取用户主目录
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := userHomeDirFunc()
 	if err != nil {
 		return err
 	}
 
 	// 创建补全脚本目录
 	completionDir := filepath.Join(homeDir, ".bash_completion.d")
-	if err := os.MkdirAll(completionDir, 0755); err != nil {
+	if err := mkdirAllFunc(completionDir, 0755); err != nil {
 		return err
 	}
 
 	// 写入补全脚本
 	completionFile := filepath.Join(completionDir, "gocli")
-	if err := os.WriteFile(completionFile, []byte(bashScript), 0644); err != nil {
+	if err := writeFileFunc(completionFile, []byte(bashScript), 0644); err != nil {
 		return err
 	}
 
@@ -70,14 +79,14 @@ complete -F _gocli_completion gocli
 	completionLine := `source ~/.bash_completion.d/gocli`
 
 	// 检查是否已经包含补全脚本
-	data, err := os.ReadFile(bashrc)
+	data, err := readFileFunc(bashrc)
 	if err != nil {
 		return err
 	}
 
 	if !strings.Contains(string(data), completionLine) {
 		// 添加补全脚本到.bashrc
-		f, err := os.OpenFile(bashrc, os.O_APPEND|os.O_WRONLY, 0644)
+		f, err := openFileFunc(bashrc, os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return err
 		}
