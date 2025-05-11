@@ -47,7 +47,7 @@ func (sm *StateMachine) AddTransition(from State, event Event, to State, action 
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	sm.transitions = make([]Transition, 0)
+	// 修复：不再清空已有转换规则，直接追加新规则
 	sm.transitions = append(sm.transitions, Transition{
 		FromState: from,
 		Event:     event,
@@ -158,4 +158,4 @@ func (sm *StateMachine) Validate() error {
 	}
 
 	return nil
-} 
+}
