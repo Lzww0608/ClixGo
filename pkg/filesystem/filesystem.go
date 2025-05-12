@@ -44,9 +44,16 @@ type FileOperation struct {
 
 // ListFiles 列出目录内容
 func ListFiles(path string, recursive bool, showHidden bool) ([]FileInfo, error) {
+	path = filepath.Clean(path)
 	var files []FileInfo
 
-	err := filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+	// 确保路径存在
+	_, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	walkFunc := func(filePath string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -59,14 +66,21 @@ func ListFiles(path string, recursive bool, showHidden bool) ([]FileInfo, error)
 			return nil
 		}
 
-		// 如果不是递归模式，只处理当前目录
-		if !recursive && filepath.Dir(path) != filepath.Clean(path) {
-			return nil
+		// 如果不是递归模式，只处理当前目录下的文件和目录
+		if !recursive && filepath.Dir(filePath) != path {
+			// 如果是子目录，跳过其内容
+			if info.IsDir() && filePath != path {
+				return filepath.SkipDir
+			}
+			// 如果不是当前目录下的文件，跳过
+			if filepath.Dir(filePath) != path {
+				return nil
+			}
 		}
 
 		fileInfo := FileInfo{
 			Name:    info.Name(),
-			Path:    path,
+			Path:    filePath,
 			Size:    info.Size(),
 			Mode:    info.Mode(),
 			ModTime: info.ModTime(),
@@ -76,8 +90,8 @@ func ListFiles(path string, recursive bool, showHidden bool) ([]FileInfo, error)
 		// 获取符号链接信息
 		if info.Mode()&fs.ModeSymlink != 0 {
 			fileInfo.IsSymlink = true
-			if target, err := os.Readlink(path); err == nil {
-				fileInfo.Path = fmt.Sprintf("%s -> %s", path, target)
+			if target, err := os.Readlink(filePath); err == nil {
+				fileInfo.Path = fmt.Sprintf("%s -> %s", filePath, target)
 			}
 		}
 
@@ -89,7 +103,7 @@ func ListFiles(path string, recursive bool, showHidden bool) ([]FileInfo, error)
 
 		// 计算文件校验和
 		if !info.IsDir() {
-			fileInfo.Checksum = calculateChecksums(path)
+			fileInfo.Checksum = calculateChecksums(filePath)
 		}
 
 		// 获取文件权限
@@ -97,14 +111,18 @@ func ListFiles(path string, recursive bool, showHidden bool) ([]FileInfo, error)
 
 		// 获取文件类型
 		if !info.IsDir() {
-			fileInfo.ContentType = detectContentType(path)
+			fileInfo.ContentType = detectContentType(filePath)
 		}
 
 		files = append(files, fileInfo)
 		return nil
-	})
+	}
 
-	return files, err
+	if err := filepath.Walk(path, walkFunc); err != nil {
+		return nil, err
+	}
+
+	return files, nil
 }
 
 // CopyFile 复制文件或目录
@@ -316,10 +334,16 @@ func detectContentType(path string) string {
 	}
 	defer file.Close()
 
+	// 读取更多内容以便更准确地检测类型
 	buffer := make([]byte, 512)
-	_, err = file.Read(buffer)
-	if err != nil {
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
 		return "unknown"
+	}
+
+	// 如果读取的内容少于512字节，调整buffer大小
+	if n < 512 {
+		buffer = buffer[:n]
 	}
 
 	return http.DetectContentType(buffer)
@@ -347,6 +371,20 @@ func copySingleFile(src, dst string) FileOperation {
 }
 
 func copyDirectory(src, dst string) FileOperation {
+	// 先将路径标准化
+	src = filepath.Clean(src)
+	dst = filepath.Clean(dst)
+
+	// 检查目标路径是否是源路径的子目录，避免无限递归
+	if strings.HasPrefix(dst, src) {
+		return FileOperation{Success: false, Error: fmt.Errorf("目标目录不能是源目录的子目录")}
+	}
+
+	// 确保目标目录存在
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return FileOperation{Success: false, Error: err}
+	}
+
 	err := filepath.Walk(src, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -492,6 +530,11 @@ func addFileToZip(zipWriter *zip.Writer, file string) error {
 	}
 
 	header.Name = filepath.Base(file)
+
+	if info.IsDir() && !strings.HasSuffix(header.Name, "/") {
+		header.Name += "/"
+	}
+
 	writer, err := zipWriter.CreateHeader(header)
 	if err != nil {
 		return err
@@ -525,6 +568,7 @@ func addFileToTar(tarWriter *tar.Writer, file string) error {
 	}
 
 	header.Name = filepath.Base(file)
+
 	err = tarWriter.WriteHeader(header)
 	if err != nil {
 		return err
@@ -547,17 +591,23 @@ func addFileToTar(tarWriter *tar.Writer, file string) error {
 }
 
 func extractFileFromZip(file *zip.File, output string) error {
-	path := filepath.Join(output, file.Name)
+	// 检查路径是否尝试遍历到输出目录之外
+	destPath := filepath.Join(output, file.Name)
 
-	if file.FileInfo().IsDir() {
-		return os.MkdirAll(path, file.Mode())
+	// 安全检查：确保最终路径在输出目录内
+	if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(output)) {
+		return fmt.Errorf("非法的文件路径: %s (路径遍历尝试)", file.Name)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if file.FileInfo().IsDir() {
+		return os.MkdirAll(destPath, file.Mode())
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
 
-	writer, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+	writer, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
 	if err != nil {
 		return err
 	}
@@ -583,19 +633,24 @@ func extractFromTar(reader *tar.Reader, output string) FileOperation {
 			return FileOperation{Success: false, Error: err}
 		}
 
-		path := filepath.Join(output, header.Name)
+		destPath := filepath.Join(output, header.Name)
+
+		// 安全检查：确保最终路径在输出目录内
+		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(output)) {
+			return FileOperation{Success: false, Error: fmt.Errorf("非法的文件路径: %s (路径遍历尝试)", header.Name)}
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(path, header.FileInfo().Mode()); err != nil {
+			if err := os.MkdirAll(destPath, header.FileInfo().Mode()); err != nil {
 				return FileOperation{Success: false, Error: err}
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 				return FileOperation{Success: false, Error: err}
 			}
 
-			writer, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, header.FileInfo().Mode())
+			writer, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, header.FileInfo().Mode())
 			if err != nil {
 				return FileOperation{Success: false, Error: err}
 			}
