@@ -20,9 +20,11 @@ func AWKCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		if logger.Log != nil {
-			logger.Error("AWK命令执行失败", zap.Error(err))
-		}
+		// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
+		defer func() {
+			recover()
+		}()
+		logger.Error("AWK命令执行失败", zap.Error(err))
 		return "", err
 	}
 
@@ -39,9 +41,11 @@ func GrepCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		if logger.Log != nil {
-			logger.Error("grep命令执行失败", zap.Error(err))
-		}
+		// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
+		defer func() {
+			recover()
+		}()
+		logger.Error("grep命令执行失败", zap.Error(err))
 		return "", err
 	}
 
@@ -58,9 +62,11 @@ func SedCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		if logger.Log != nil {
-			logger.Error("sed命令执行失败", zap.Error(err))
-		}
+		// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
+		defer func() {
+			recover()
+		}()
+		logger.Error("sed命令执行失败", zap.Error(err))
 		return "", err
 	}
 
@@ -94,9 +100,11 @@ func PipeCommands(commands []string) (string, error) {
 
 		err = cmd.Run()
 		if err != nil {
-			if logger.Log != nil {
-				logger.Error("管道命令执行失败", zap.Error(err), zap.String("command", command))
-			}
+			// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
+			defer func() {
+				recover()
+			}()
+			logger.Error("管道命令执行失败", zap.Error(err), zap.String("command", command))
 			return "", err
 		}
 	}

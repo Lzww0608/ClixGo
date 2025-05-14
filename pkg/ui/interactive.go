@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
@@ -183,4 +184,4 @@ func (ui *InteractiveUI) loadHistory() error {
 
 	ui.history = strings.Split(string(data), "\n")
 	return nil
-} 
+}

@@ -1,230 +1,96 @@
 package commands
 
 import (
-	"os/exec"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/stretchr/testify/assert"
 )
 
-// 检查命令是否可用
-func commandExists(cmd string) bool {
-	_, err := exec.LookPath(cmd)
-	return err == nil
+func init() {
+	// 防止日志系统panic
+	go func() {
+		defer func() {
+			recover()
+		}()
+		logger.SetLogPath("test_commands.log")
+		logger.InitLogger()
+	}()
 }
 
+// 测试AWK命令
 func TestAWKCommand(t *testing.T) {
-	if !commandExists("awk") {
-		t.Skip("awk 命令不可用，跳过测试")
-	}
+	input := "line1 abc\nline2 def\nline3 abc"
+	pattern := "{print $2}"
 
-	tests := []struct {
-		name     string
-		input    string
-		pattern  string
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "基本过滤",
-			input:    "hello\nworld\n123",
-			pattern:  "/^[a-z]/",
-			expected: "hello\nworld\n",
-			wantErr:  false,
-		},
-		{
-			name:     "打印特定列",
-			input:    "name:john age:25\nname:alice age:30",
-			pattern:  "{print $2}",
-			expected: "age:25\nage:30\n",
-			wantErr:  false,
-		},
-	}
+	output, err := AWKCommand(input, pattern)
+	assert.NoError(t, err, "AWK命令应该成功执行")
+	assert.Equal(t, "abc\ndef\nabc\n", output, "AWK命令应该返回正确结果")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := AWKCommand(tt.input, tt.pattern)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("AWKCommand() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !strings.Contains(result, tt.expected) {
-				t.Errorf("AWKCommand() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
+	// 测试错误情况
+	_, err = AWKCommand(input, "{invalid")
+	assert.Error(t, err, "AWK命令应该返回语法错误")
 }
 
+// 测试Grep命令
 func TestGrepCommand(t *testing.T) {
-	if !commandExists("grep") {
-		t.Skip("grep 命令不可用，跳过测试")
-	}
+	input := "line1 abc\nline2 def\nline3 abc"
+	pattern := "abc"
 
-	tests := []struct {
-		name     string
-		input    string
-		pattern  string
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "基本匹配",
-			input:    "hello\nworld\n123",
-			pattern:  "world",
-			expected: "world\n",
-			wantErr:  false,
-		},
-		{
-			name:     "正则匹配",
-			input:    "hello\nworld\n123",
-			pattern:  "^[0-9]",
-			expected: "123\n",
-			wantErr:  false,
-		},
-	}
+	output, err := GrepCommand(input, pattern)
+	assert.NoError(t, err, "Grep命令应该成功执行")
+	assert.True(t, strings.Contains(output, "line1 abc"), "Grep命令应该包含匹配行")
+	assert.True(t, strings.Contains(output, "line3 abc"), "Grep命令应该包含匹配行")
+	assert.False(t, strings.Contains(output, "line2 def"), "Grep命令不应该包含不匹配行")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := GrepCommand(tt.input, tt.pattern)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GrepCommand() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !strings.Contains(result, tt.expected) {
-				t.Errorf("GrepCommand() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
+	// 测试没有匹配的情况
+	_, err = GrepCommand(input, "xyz")
+	assert.Error(t, err, "没有匹配应该返回错误")
 }
 
+// 测试Sed命令
 func TestSedCommand(t *testing.T) {
-	if !commandExists("sed") {
-		t.Skip("sed 命令不可用，跳过测试")
-	}
+	input := "line1 abc\nline2 def\nline3 abc"
+	pattern := "s/abc/xyz/g"
 
-	tests := []struct {
-		name     string
-		input    string
-		pattern  string
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "基本替换",
-			input:    "hello world",
-			pattern:  "s/world/golang/",
-			expected: "hello golang",
-			wantErr:  false,
-		},
-		{
-			name:     "删除特定行",
-			input:    "line1\nline2\nline3",
-			pattern:  "2d",
-			expected: "line1\nline3",
-			wantErr:  false,
-		},
-	}
+	output, err := SedCommand(input, pattern)
+	assert.NoError(t, err, "Sed命令应该成功执行")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := SedCommand(tt.input, tt.pattern)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SedCommand() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !strings.Contains(result, tt.expected) {
-				t.Errorf("SedCommand() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
+	// 使用strings.Contains而不是完全相等，因为不同平台可能有不同的换行符
+	assert.Contains(t, output, "line1 xyz", "Sed命令应该替换abc为xyz")
+	assert.Contains(t, output, "line2 def", "Sed命令不应该修改不包含abc的行")
+	assert.Contains(t, output, "line3 xyz", "Sed命令应该替换abc为xyz")
+
+	// 测试错误情况
+	_, err = SedCommand(input, "s/abc")
+	assert.Error(t, err, "Sed命令应该返回语法错误")
 }
 
+// 测试管道命令
 func TestPipeCommands(t *testing.T) {
-	// 检查操作系统，在Windows上使用不同的命令
-	isWindows := runtime.GOOS == "windows"
-
-	var echoCmd string
-	if isWindows {
-		echoCmd = "cmd"
-
-		// 如果是Windows且这些命令不可用，则跳过测试
-		if !commandExists("cmd") || !commandExists("findstr") {
-			t.Skip("Windows 所需命令不可用，跳过测试")
-		}
-	} else {
-		echoCmd = "echo"
-
-		// 如果是非Windows且这些命令不可用，则跳过测试
-		if !commandExists("echo") || !commandExists("grep") {
-			t.Skip("Unix 所需命令不可用，跳过测试")
-		}
+	// 测试有效的管道命令
+	commands := []string{
+		"echo 'line1 abc'",
+		"sed s/abc/xyz/g",
 	}
 
-	tests := []struct {
-		name     string
-		commands []string
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "空命令列表",
-			commands: []string{},
-			expected: "",
-			wantErr:  true,
-		},
-		{
-			name:     "包含空命令",
-			commands: []string{echoCmd + " test", ""},
-			expected: "",
-			wantErr:  true,
-		},
-	}
+	output, err := PipeCommands(commands)
+	assert.NoError(t, err, "管道命令应该成功执行")
+	assert.Contains(t, output, "xyz", "管道命令应该返回正确结果")
+	assert.NotContains(t, output, "def", "管道命令不应包含不相关内容")
 
-	// 根据操作系统添加不同的测试用例
-	if isWindows {
-		tests = append(tests, struct {
-			name     string
-			commands []string
-			expected string
-			wantErr  bool
-		}{
-			name:     "基本命令",
-			commands: []string{"cmd /c echo hello"},
-			expected: "hello",
-			wantErr:  false,
-		})
-	} else {
-		tests = append(tests, []struct {
-			name     string
-			commands []string
-			expected string
-			wantErr  bool
-		}{
-			{
-				name:     "基本命令",
-				commands: []string{"echo hello"},
-				expected: "hello",
-				wantErr:  false,
-			},
-			{
-				name:     "简单管道",
-				commands: []string{"echo -e 'hello\nworld'", "grep hello"},
-				expected: "hello",
-				wantErr:  false,
-			},
-		}...)
-	}
+	// 测试空命令列表
+	_, err = PipeCommands([]string{})
+	assert.Error(t, err, "空命令列表应该返回错误")
+	assert.Contains(t, err.Error(), "没有提供命令", "错误信息不正确")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := PipeCommands(tt.commands)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("PipeCommands() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && result != "" && !strings.Contains(result, tt.expected) {
-				t.Errorf("PipeCommands() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
+	// 测试包含空命令
+	_, err = PipeCommands([]string{"echo test", ""})
+	assert.Error(t, err, "空命令应该返回错误")
+	assert.Contains(t, err.Error(), "空命令", "错误信息不正确")
+
+	// 测试无效命令
+	_, err = PipeCommands([]string{"echo test", "invalidcmd"})
+	assert.Error(t, err, "无效命令应该返回错误")
 }
