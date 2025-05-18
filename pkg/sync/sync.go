@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // OperationType 表示操作类型
@@ -38,19 +39,27 @@ type SyncManager struct {
 	mu         sync.RWMutex
 	syncDir    string
 	offline    bool
+	logger     *zap.Logger
 }
 
 // NewSyncManager 创建新的同步管理器
 func NewSyncManager(syncDir string) *SyncManager {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		// 如果无法创建日志器，使用空日志器
+		logger = zap.NewNop()
+	}
+
 	sm := &SyncManager{
 		operations: make([]*Operation, 0),
 		syncDir:    syncDir,
 		offline:    false,
+		logger:     logger,
 	}
 
 	// 加载现有操作
 	if err := sm.loadOperations(); err != nil {
-		fmt.Printf("加载操作失败: %v\n", err)
+		sm.logger.Error("加载操作失败", zap.Error(err))
 	}
 
 	return sm
@@ -88,7 +97,9 @@ func (sm *SyncManager) CreateOperation(opType OperationType, entity string, data
 
 	sm.operations = append(sm.operations, op)
 	if err := sm.saveOperation(op); err != nil {
-		fmt.Printf("保存操作失败: %v\n", err)
+		sm.logger.Error("保存操作失败",
+			zap.String("operation_id", op.ID),
+			zap.Error(err))
 	}
 
 	return op
@@ -101,7 +112,7 @@ func (sm *SyncManager) ExecuteOperation(ctx context.Context, op *Operation, fn f
 	sm.mu.Unlock()
 
 	if err := sm.saveOperation(op); err != nil {
-		return fmt.Errorf("保存操作失败: %v", err)
+		return fmt.Errorf("保存操作失败: %w", err)
 	}
 
 	err := fn(ctx, op)
@@ -116,7 +127,7 @@ func (sm *SyncManager) ExecuteOperation(ctx context.Context, op *Operation, fn f
 	sm.mu.Unlock()
 
 	if err := sm.saveOperation(op); err != nil {
-		return fmt.Errorf("保存操作失败: %v", err)
+		return fmt.Errorf("保存操作失败: %w", err)
 	}
 
 	return err
@@ -160,7 +171,7 @@ func (sm *SyncManager) RetryOperation(ctx context.Context, op *Operation, fn fun
 	sm.mu.Unlock()
 
 	if err := sm.saveOperation(op); err != nil {
-		return fmt.Errorf("保存操作失败: %v", err)
+		return fmt.Errorf("保存操作失败: %w", err)
 	}
 
 	err := fn(ctx, op)
@@ -175,7 +186,7 @@ func (sm *SyncManager) RetryOperation(ctx context.Context, op *Operation, fn fun
 	sm.mu.Unlock()
 
 	if err := sm.saveOperation(op); err != nil {
-		return fmt.Errorf("保存操作失败: %v", err)
+		return fmt.Errorf("保存操作失败: %w", err)
 	}
 
 	return err
@@ -191,7 +202,7 @@ func (sm *SyncManager) ClearOperations() error {
 	// 删除所有操作文件
 	files, err := os.ReadDir(sm.syncDir)
 	if err != nil {
-		return fmt.Errorf("读取同步目录失败: %v", err)
+		return fmt.Errorf("读取同步目录失败: %w", err)
 	}
 
 	for _, file := range files {
@@ -200,7 +211,9 @@ func (sm *SyncManager) ClearOperations() error {
 		}
 
 		if err := os.Remove(filepath.Join(sm.syncDir, file.Name())); err != nil {
-			fmt.Printf("删除操作文件 %s 失败: %v\n", file.Name(), err)
+			sm.logger.Warn("删除操作文件失败",
+				zap.String("file", file.Name()),
+				zap.Error(err))
 		}
 	}
 
@@ -210,12 +223,12 @@ func (sm *SyncManager) ClearOperations() error {
 // loadOperations 加载所有操作
 func (sm *SyncManager) loadOperations() error {
 	if err := os.MkdirAll(sm.syncDir, 0755); err != nil {
-		return fmt.Errorf("创建同步目录失败: %v", err)
+		return fmt.Errorf("创建同步目录失败: %w", err)
 	}
 
 	files, err := os.ReadDir(sm.syncDir)
 	if err != nil {
-		return fmt.Errorf("读取同步目录失败: %v", err)
+		return fmt.Errorf("读取同步目录失败: %w", err)
 	}
 
 	for _, file := range files {
@@ -225,13 +238,17 @@ func (sm *SyncManager) loadOperations() error {
 
 		data, err := os.ReadFile(filepath.Join(sm.syncDir, file.Name()))
 		if err != nil {
-			fmt.Printf("读取操作文件 %s 失败: %v\n", file.Name(), err)
+			sm.logger.Warn("读取操作文件失败",
+				zap.String("file", file.Name()),
+				zap.Error(err))
 			continue
 		}
 
 		var op Operation
 		if err := json.Unmarshal(data, &op); err != nil {
-			fmt.Printf("解析操作文件 %s 失败: %v\n", file.Name(), err)
+			sm.logger.Warn("解析操作文件失败",
+				zap.String("file", file.Name()),
+				zap.Error(err))
 			continue
 		}
 
@@ -244,18 +261,18 @@ func (sm *SyncManager) loadOperations() error {
 // saveOperation 保存操作
 func (sm *SyncManager) saveOperation(op *Operation) error {
 	if err := os.MkdirAll(sm.syncDir, 0755); err != nil {
-		return fmt.Errorf("创建同步目录失败: %v", err)
+		return fmt.Errorf("创建同步目录失败: %w", err)
 	}
 
 	data, err := json.MarshalIndent(op, "", "  ")
 	if err != nil {
-		return fmt.Errorf("序列化操作失败: %v", err)
+		return fmt.Errorf("序列化操作失败: %w", err)
 	}
 
 	filename := filepath.Join(sm.syncDir, op.ID+".json")
 	if err := os.WriteFile(filename, data, 0644); err != nil {
-		return fmt.Errorf("写入操作文件失败: %v", err)
+		return fmt.Errorf("写入操作文件失败: %w", err)
 	}
 
 	return nil
-} 
+}
