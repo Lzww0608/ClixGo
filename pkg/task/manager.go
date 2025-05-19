@@ -192,14 +192,15 @@ func (tm *TaskManager) UpdateTaskProgress(taskID string, progress float64) error
 // CancelTask 取消任务
 func (tm *TaskManager) CancelTask(taskID string) error {
 	tm.mu.Lock()
-	defer tm.mu.Unlock()
 
 	task, ok := tm.tasks[taskID]
 	if !ok {
+		tm.mu.Unlock()
 		return errors.New("任务不存在")
 	}
 
 	if task.Status != TaskStatusRunning && task.Status != TaskStatusPending {
+		tm.mu.Unlock()
 		return errors.New("任务无法取消")
 	}
 
@@ -207,8 +208,17 @@ func (tm *TaskManager) CancelTask(taskID string) error {
 	task.Status = TaskStatusCancelled
 	task.FinishedAt = &now
 
-	tm.notifySubscribers(task)
-	return tm.saveTasks()
+	// 创建任务副本用于通知
+	taskCopy := *task
+
+	// 解锁，避免在持有写锁的情况下调用saveTasks
+	tm.mu.Unlock()
+
+	// 在解锁后保存任务和通知订阅者
+	err := tm.saveTasks()
+	tm.notifySubscribers(&taskCopy)
+
+	return err
 }
 
 // GetTask 获取任务信息
@@ -321,10 +331,17 @@ func (tm *TaskManager) loadTasks() error {
 
 // saveTasks 保存任务到文件
 func (tm *TaskManager) saveTasks() error {
+	// 首先创建任务的一个深拷贝
 	tm.mu.RLock()
-	data, err := json.MarshalIndent(tm.tasks, "", "  ")
+	tasksCopy := make(map[string]*Task, len(tm.tasks))
+	for id, task := range tm.tasks {
+		taskCopy := *task
+		tasksCopy[id] = &taskCopy
+	}
 	tm.mu.RUnlock()
 
+	// 在不持有锁的情况下进行序列化
+	data, err := json.MarshalIndent(tasksCopy, "", "  ")
 	if err != nil {
 		return errors.Wrap(err, "序列化任务数据失败")
 	}
