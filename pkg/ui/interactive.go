@@ -177,11 +177,26 @@ func (ui *InteractiveUI) loadHistory() error {
 	data, err := os.ReadFile(ui.historyFile)
 	if err != nil {
 		if os.IsNotExist(err) {
+			ui.history = make([]string, 0) // 文件不存在，历史记录视为空
 			return nil
 		}
 		return err
 	}
 
-	ui.history = strings.Split(string(data), "\n")
+	if len(data) == 0 {
+		ui.history = make([]string, 0) // 空文件，则历史记录为空
+		return nil
+	}
+
+	// 移除末尾的换行符，然后按换行符分割
+	// 这样可以避免因文件末尾换行符导致产生额外的空历史条目
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+
+	// 如果分割后只有一个空字符串元素（例如，文件内容为 "\n"），则历史记录视为空
+	if len(lines) == 1 && lines[0] == "" {
+		ui.history = make([]string, 0)
+	} else {
+		ui.history = lines
+	}
 	return nil
 }
