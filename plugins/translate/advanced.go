@@ -254,7 +254,7 @@ func (s *TranslationService) detectLanguageAdvanced(ctx context.Context, text st
 	}
 
 	// 使用 API 检测
-	result, err := detectLanguage(text)
+	result, err := s.detectLanguage(text)
 	if err != nil {
 		return nil, err
 	}

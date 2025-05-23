@@ -18,7 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )
 
@@ -258,7 +257,7 @@ func (s *TranslationService) translateLargeFile(ctx context.Context, filePath, s
 	defer file.Close()
 
 	// 获取文件大小
-	fileInfo, err := file.Stat()
+	_, err = file.Stat()
 	if err != nil {
 		s.recordMetrics(start, "file", sourceLang, targetLang, err, 0)
 		return errors.Wrap(ErrFileIO, fmt.Sprintf("获取文件信息失败: %v", err))
@@ -328,61 +327,50 @@ func (s *TranslationService) translateAndWrite(ctx context.Context, text, source
 }
 
 // translateDirectory 翻译目录中的所有文件
-func (s *TranslationService) translateDirectory(ctx context.Context, dirPath, sourceLang, targetLang string) error {
-	start := time.Now()
-	s.recordActiveRequest(1)
-	defer s.recordActiveRequest(-1)
-
-	g, ctx := errgroup.WithContext(ctx)
-	tasks := make(chan string, s.config.MaxConcurrency)
-
-	// 启动工作协程
-	for i := 0; i < s.config.MaxConcurrency; i++ {
-		s.recordWorkerCount(1)
-		g.Go(func() error {
-			defer s.recordWorkerCount(-1)
-			for path := range tasks {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-					if err := s.translateLargeFile(ctx, path, sourceLang, targetLang); err != nil {
-						return errors.Wrapf(err, "处理文件 %s 失败", path)
-					}
-				}
-			}
-			return nil
-		})
+func translateDirectory(dirPath, sourceLang, targetLang string) error {
+	// 检查 service 是否初始化
+	if service == nil {
+		return errors.New("translation service not initialized")
 	}
 
-	// 遍历目录并分发任务
-	var bytesProcessed int64
-	g.Go(func() error {
-		defer close(tasks)
-		return filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, service.config.MaxConcurrency)
 
-			if !info.IsDir() && strings.HasSuffix(info.Name(), ".txt") {
-				bytesProcessed += info.Size()
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case tasks <- path:
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".txt") {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				if err := translateFile(path, sourceLang, targetLang); err != nil {
+					fmt.Printf("翻译文件 %s 失败: %v\n", path, err)
 				}
-			}
-			return nil
-		})
+			}()
+		}
+		return nil
 	})
 
-	err := g.Wait()
-	s.recordMetrics(start, "directory", sourceLang, targetLang, err, int(bytesProcessed))
-	return err
+	if err != nil {
+		return fmt.Errorf("遍历目录失败: %v", err)
+	}
+
+	wg.Wait()
+	return nil
 }
 
 // translateText 翻译文本
 func translateText(text, sourceLang, targetLang string) (*TranslationResult, error) {
+	// 检查 service 是否初始化
+	if service == nil {
+		return nil, errors.New("translation service not initialized")
+	}
+
 	// 检查缓存
 	cacheKey := getCacheKey(text, sourceLang, targetLang)
 	if result, ok := getFromCache(cacheKey); ok {
@@ -392,7 +380,7 @@ func translateText(text, sourceLang, targetLang string) (*TranslationResult, err
 	baseURL := "https://translation.googleapis.com/language/translate/v2"
 
 	params := url.Values{}
-	params.Add("key", config.APIKey)
+	params.Add("key", service.config.APIKey)
 	params.Add("q", text)
 	params.Add("source", sourceLang)
 	params.Add("target", targetLang)
@@ -400,7 +388,7 @@ func translateText(text, sourceLang, targetLang string) (*TranslationResult, err
 	url := fmt.Sprintf("%s?%s", baseURL, params.Encode())
 
 	client := &http.Client{
-		Timeout: config.Timeout,
+		Timeout: service.config.Timeout,
 	}
 
 	resp, err := client.Get(url)
@@ -513,39 +501,6 @@ func translateFile(filePath, sourceLang, targetLang string) error {
 	return nil
 }
 
-// translateDirectory 翻译目录中的所有文件
-func translateDirectory(dirPath, sourceLang, targetLang string) error {
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, config.MaxConcurrency)
-
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".txt") {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
-
-				if err := translateFile(path, sourceLang, targetLang); err != nil {
-					fmt.Printf("翻译文件 %s 失败: %v\n", path, err)
-				}
-			}()
-		}
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("遍历目录失败: %v", err)
-	}
-
-	wg.Wait()
-	return nil
-}
-
 // InitCommands 初始化翻译命令
 func InitCommands() *cobra.Command {
 	translateCmd := &cobra.Command{
@@ -573,8 +528,8 @@ func InitCommands() *cobra.Command {
 			fmt.Printf("译文 (%s): %s\n", result.TargetLang, result.Text)
 		},
 	}
-	textCmd.Flags().StringP("source", "s", config.DefaultSource, "源语言代码")
-	textCmd.Flags().StringP("target", "t", config.DefaultTarget, "目标语言代码")
+	textCmd.Flags().StringP("source", "s", service.config.DefaultSource, "源语言代码")
+	textCmd.Flags().StringP("target", "t", service.config.DefaultTarget, "目标语言代码")
 
 	// 翻译文件命令
 	fileCmd := &cobra.Command{
@@ -590,8 +545,8 @@ func InitCommands() *cobra.Command {
 			}
 		},
 	}
-	fileCmd.Flags().StringP("source", "s", config.DefaultSource, "源语言代码")
-	fileCmd.Flags().StringP("target", "t", config.DefaultTarget, "目标语言代码")
+	fileCmd.Flags().StringP("source", "s", service.config.DefaultSource, "源语言代码")
+	fileCmd.Flags().StringP("target", "t", service.config.DefaultTarget, "目标语言代码")
 
 	// 翻译目录命令
 	dirCmd := &cobra.Command{
@@ -607,8 +562,8 @@ func InitCommands() *cobra.Command {
 			}
 		},
 	}
-	dirCmd.Flags().StringP("source", "s", config.DefaultSource, "源语言代码")
-	dirCmd.Flags().StringP("target", "t", config.DefaultTarget, "目标语言代码")
+	dirCmd.Flags().StringP("source", "s", service.config.DefaultSource, "源语言代码")
+	dirCmd.Flags().StringP("target", "t", service.config.DefaultTarget, "目标语言代码")
 
 	// 语言检测命令
 	detectCmd := &cobra.Command{
@@ -695,10 +650,10 @@ func InitCommands() *cobra.Command {
 		},
 	}
 
-	batchCmd.Flags().StringP("source", "s", config.DefaultSource, "源语言代码")
-	batchCmd.Flags().StringP("target", "t", config.DefaultTarget, "目标语言代码")
+	batchCmd.Flags().StringP("source", "s", service.config.DefaultSource, "源语言代码")
+	batchCmd.Flags().StringP("target", "t", service.config.DefaultTarget, "目标语言代码")
 	batchCmd.Flags().Bool("use-memory", true, "使用翻译记忆")
-	batchCmd.Flags().IntP("concurrency", "c", config.MaxConcurrency, "并发数")
+	batchCmd.Flags().IntP("concurrency", "c", service.config.MaxConcurrency, "并发数")
 
 	// 流式翻译命令
 	streamCmd := &cobra.Command{
@@ -751,10 +706,10 @@ func InitCommands() *cobra.Command {
 		},
 	}
 
-	streamCmd.Flags().StringP("source", "s", config.DefaultSource, "源语言代码")
-	streamCmd.Flags().StringP("target", "t", config.DefaultTarget, "目标语言代码")
+	streamCmd.Flags().StringP("source", "s", service.config.DefaultSource, "源语言代码")
+	streamCmd.Flags().StringP("target", "t", service.config.DefaultTarget, "目标语言代码")
 	streamCmd.Flags().Int("buffer-size", 4096, "缓冲区大小")
-	streamCmd.Flags().Int("chunk-size", config.ChunkSize, "分块大小")
+	streamCmd.Flags().Int("chunk-size", service.config.ChunkSize, "分块大小")
 	streamCmd.Flags().Bool("preserve-html", false, "保留HTML标签")
 	streamCmd.Flags().Bool("preserve-markdown", false, "保留Markdown语法")
 
@@ -791,3 +746,53 @@ func InitCommands() *cobra.Command {
 	translateCmd.AddCommand(textCmd, fileCmd, dirCmd, detectCmd, batchCmd, streamCmd, detectAdvancedCmd)
 	return translateCmd
 }
+
+// getCacheKey 生成缓存键
+func getCacheKey(text, sourceLang, targetLang string) string {
+	return fmt.Sprintf("%s|%s|%s", text, sourceLang, targetLang)
+}
+
+// getFromCache 从缓存获取翻译结果
+func getFromCache(key string) (*TranslationResult, bool) {
+	if service == nil || !service.config.CacheEnabled {
+		return nil, false
+	}
+
+	service.cache.mu.RLock()
+	defer service.cache.mu.RUnlock()
+
+	if result, ok := service.cache.items[key]; ok {
+		// 检查是否过期
+		if time.Since(result.Timestamp) <= service.config.CacheDuration {
+			service.recordCacheMetrics(true)
+			return result, true
+		}
+		// 过期则删除
+		delete(service.cache.items, key)
+	}
+
+	service.recordCacheMetrics(false)
+	return nil, false
+}
+
+// saveToCache 保存翻译结果到缓存
+func saveToCache(key string, result TranslationResult) {
+	if service == nil || !service.config.CacheEnabled {
+		return
+	}
+
+	service.cache.mu.Lock()
+	defer service.cache.mu.Unlock()
+
+	service.cache.items[key] = &result
+}
+
+// detectLanguage 检测文本语言（独立函数版本）
+func detectLanguage(text string) (*LanguageDetection, error) {
+	if service == nil {
+		return nil, errors.New("translation service not initialized")
+	}
+	return service.detectLanguage(text)
+}
+
+// translateText 翻译文本
