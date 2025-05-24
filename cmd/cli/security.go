@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/Lzww0608/ClixGo/pkg/security"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -115,7 +115,7 @@ func NewSecurityCmd() *cobra.Command {
 	cmd.Commands()[1].Flags().StringSliceP("users", "u", nil, "允许的用户列表")
 	cmd.Commands()[1].Flags().StringSliceP("groups", "g", nil, "允许的用户组列表")
 	cmd.Commands()[1].Flags().StringSliceP("time-range", "t", nil, "允许执行的时间范围")
-	cmd.Commands()[1].Flags().IntP("max-duration", "d", 0, "最大执行时间（秒）")
+	cmd.Commands()[1].Flags().Int("max-duration", 0, "最大执行时间（秒）")
 	cmd.Commands()[1].Flags().IntP("max-calls", "c", 0, "每小时最大调用次数")
 
 	// 移除策略命令
@@ -205,4 +205,4 @@ func WrapCommand(cmd *cobra.Command) *cobra.Command {
 	}
 
 	return cmd
-} 
+}

@@ -60,6 +60,9 @@ func init() {
 	rootCmd.AddCommand(NewHistoryCmd())
 	rootCmd.AddCommand(NewAliasCmd())
 	rootCmd.AddCommand(NewNetworkCmd())
+	rootCmd.AddCommand(NewTextCmd())
+	rootCmd.AddCommand(NewFilesystemCmd())
+	rootCmd.AddCommand(NewSecurityCmd())
 
 	// 添加任务管理命令
 	rootCmd.AddCommand(task.Command())

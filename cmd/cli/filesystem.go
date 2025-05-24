@@ -52,7 +52,7 @@ func NewFilesystemCmd() *cobra.Command {
 			return nil
 		},
 	})
-	cmd.Commands()[0].Flags().BoolP("recursive", "r", false, "递归列出子目录")
+	cmd.Commands()[0].Flags().Bool("recursive", false, "递归列出子目录")
 	cmd.Commands()[0].Flags().BoolP("all", "a", false, "显示隐藏文件")
 	cmd.Commands()[0].Flags().BoolP("long", "l", false, "显示详细信息")
 
@@ -143,7 +143,7 @@ func NewFilesystemCmd() *cobra.Command {
 				return fmt.Errorf("无效的权限模式: %v", err)
 			}
 
-			recursive, _ := cmd.Flags().GetBool("recursive")
+			recursive, _ := cmd.Flags().GetBool("recursive-chmod")
 			result := filesystem.ChangePermissions(args[1], os.FileMode(mode), recursive)
 			if !result.Success {
 				return result.Error
@@ -152,7 +152,7 @@ func NewFilesystemCmd() *cobra.Command {
 			return nil
 		},
 	})
-	cmd.Commands()[5].Flags().BoolP("recursive", "R", false, "递归修改权限")
+	cmd.Commands()[5].Flags().Bool("recursive-chmod", false, "递归修改权限")
 
 	// 修改所有者命令
 	cmd.AddCommand(&cobra.Command{
@@ -170,7 +170,7 @@ func NewFilesystemCmd() *cobra.Command {
 				return fmt.Errorf("无效的组ID: %v", err)
 			}
 
-			recursive, _ := cmd.Flags().GetBool("recursive")
+			recursive, _ := cmd.Flags().GetBool("recursive-chown")
 			result := filesystem.ChangeOwner(args[2], uid, gid, recursive)
 			if !result.Success {
 				return result.Error
@@ -179,7 +179,7 @@ func NewFilesystemCmd() *cobra.Command {
 			return nil
 		},
 	})
-	cmd.Commands()[6].Flags().BoolP("recursive", "R", false, "递归修改所有者")
+	cmd.Commands()[6].Flags().Bool("recursive-chown", false, "递归修改所有者")
 
 	// 创建符号链接命令
 	cmd.AddCommand(&cobra.Command{
@@ -211,7 +211,7 @@ func NewFilesystemCmd() *cobra.Command {
 			return nil
 		},
 	})
-	cmd.Commands()[8].Flags().StringP("format", "f", "zip", "归档格式 (zip, tar, tar.gz)")
+	cmd.Commands()[8].Flags().String("format", "zip", "归档格式 (zip, tar, tar.gz)")
 
 	// 解压命令
 	cmd.AddCommand(&cobra.Command{
