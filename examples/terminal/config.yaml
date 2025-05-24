@@ -1,0 +1,148 @@
+# ClixGo Terminal 配置文件示例
+# 保存到 ~/.clixgo/terminal.yaml
+
+# 基础配置
+prefix_key: "C-b"                    # 快捷键前缀 (默认: Ctrl+B)
+mouse_enabled: true                  # 启用鼠标支持
+status_bar: true                     # 显示状态栏
+auto_save: true                      # 自动保存会话
+save_interval: "5m"                  # 自动保存间隔
+
+# 显示配置
+theme: "default"                     # 主题: default, dark, light
+status_format: "[#S] #I:#W"         # 状态栏格式
+window_format: "#I:#W"               # 窗口格式
+
+# 缓冲区配置
+buffer_size: 2000                    # 缓冲区大小
+scroll_back: 2000                    # 回滚行数
+
+# ClixGo 集成
+clixgo_integration: true             # 启用 ClixGo 工具集成
+network_monitor: false               # 启用网络监控
+task_integration: true               # 启用任务管理集成
+
+# 自定义快捷键
+key_bindings:
+  # 会话管理
+  - key: "C-b d"
+    command: "detach_session"
+  - key: "C-b D"
+    command: "kill_session"
+  
+  # 窗口管理
+  - key: "C-b c"
+    command: "create_window"
+  - key: "C-b &"
+    command: "close_window"
+  - key: "C-b n"
+    command: "next_window"
+  - key: "C-b p"
+    command: "previous_window"
+  - key: "C-b l"
+    command: "last_window"
+  
+  # 面板管理
+  - key: "C-b \""
+    command: "split_pane"
+    args: ["horizontal"]
+  - key: "C-b %"
+    command: "split_pane"
+    args: ["vertical"]
+  - key: "C-b x"
+    command: "close_pane"
+  - key: "C-b o"
+    command: "switch_pane"
+  - key: "C-b z"
+    command: "zoom_pane"
+  
+  # 布局管理
+  - key: "C-b Space"
+    command: "next_layout"
+  - key: "C-b Alt-1"
+    command: "set_layout"
+    args: ["even"]
+  - key: "C-b Alt-2"
+    command: "set_layout"
+    args: ["main-vertical"]
+  - key: "C-b Alt-3"
+    command: "set_layout"
+    args: ["main-horizontal"]
+  
+  # 复制模式
+  - key: "C-b ["
+    command: "copy_mode"
+  - key: "C-b ]"
+    command: "paste_buffer"
+  
+  # 帮助和信息
+  - key: "C-b ?"
+    command: "list_keys"
+  - key: "C-b i"
+    command: "show_info"
+
+# 高级配置
+advanced:
+  # 网络配置
+  socket_permissions: "0700"         # Socket 文件权限
+  max_clients: 100                   # 最大客户端连接数
+  client_timeout: "30m"              # 客户端超时时间
+  
+  # 性能配置
+  max_sessions: 50                   # 最大会话数
+  max_windows_per_session: 20        # 每个会话最大窗口数
+  max_panes_per_window: 10           # 每个窗口最大面板数
+  
+  # 日志配置
+  log_level: "info"                  # 日志级别: debug, info, warn, error
+  log_file: "~/.clixgo/terminal.log" # 日志文件路径
+  
+  # 安全配置
+  enable_auth: false                 # 启用认证
+  auth_file: "~/.clixgo/auth.json"   # 认证文件
+
+# 插件配置
+plugins:
+  # 网络监控插件
+  network_monitor:
+    enabled: false
+    interval: "10s"
+    targets: ["8.8.8.8", "1.1.1.1"]
+  
+  # 系统监控插件
+  system_monitor:
+    enabled: false
+    interval: "5s"
+    metrics: ["cpu", "memory", "disk"]
+  
+  # 任务管理插件
+  task_manager:
+    enabled: true
+    auto_cleanup: true
+    max_completed_tasks: 100
+
+# 主题配置
+themes:
+  default:
+    background: "#1e1e1e"
+    foreground: "#d4d4d4"
+    border: "#404040"
+    active_border: "#007acc"
+    status_bg: "#007acc"
+    status_fg: "#ffffff"
+  
+  dark:
+    background: "#000000"
+    foreground: "#ffffff"
+    border: "#333333"
+    active_border: "#ff6600"
+    status_bg: "#333333"
+    status_fg: "#ffffff"
+  
+  light:
+    background: "#ffffff"
+    foreground: "#000000"
+    border: "#cccccc"
+    active_border: "#0066cc"
+    status_bg: "#f0f0f0"
+    status_fg: "#000000" 
