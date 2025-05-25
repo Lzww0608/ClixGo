@@ -5,7 +5,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // SessionManager 会话管理器
@@ -310,6 +312,24 @@ func (sm *SessionManager) createPane(window *Window, command string) (*Pane, err
 			CursorX:  0,
 			CursorY:  0,
 		},
+	}
+
+	// 如果配置了简化PTY，创建和启动PTY
+	if sm.config.ClixGoIntegration {
+		ptyManager := NewSimplePTYManager(sm.config)
+		pty, err := ptyManager.CreateSimplePTY(pane.ID, command, workingDir, 80, 24)
+		if err != nil {
+			logger.Warn("Failed to create PTY, using simple command execution", zap.Error(err))
+			// 继续使用原有的简单实现
+		} else {
+			// 启动PTY
+			if err := pty.Start(); err != nil {
+				logger.Error("Failed to start PTY", zap.Error(err))
+			} else {
+				pane.ProcessID = pty.GetPID()
+				logger.Info("PTY created for pane", zap.String("pane_id", pane.ID), zap.Int("pid", pane.ProcessID))
+			}
+		}
 	}
 
 	return pane, nil

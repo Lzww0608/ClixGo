@@ -234,6 +234,30 @@ func NewTerminalCmd() *cobra.Command {
 		},
 	})
 
+	serverCmd.AddCommand(&cobra.Command{
+		Use:   "stop",
+		Short: "停止终端服务器",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				homeDir = "/tmp"
+			}
+			socketPath := fmt.Sprintf("%s/.clixgo/terminal/clixgo-terminal.sock", homeDir)
+
+			// 尝试删除socket文件来停止服务器
+			if err := os.Remove(socketPath); err != nil {
+				if os.IsNotExist(err) {
+					fmt.Println("服务器未运行")
+					return nil
+				}
+				return fmt.Errorf("停止服务器失败: %v", err)
+			}
+
+			fmt.Println("终端服务器已停止")
+			return nil
+		},
+	})
+
 	// 快捷命令
 	cmd.AddCommand(&cobra.Command{
 		Use:     "split-window",

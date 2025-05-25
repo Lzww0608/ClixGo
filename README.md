@@ -36,7 +36,7 @@ ClixGo 是一个功能强大的命令行工具集合，提供了多种实用功�
   - 网络速度测试：测试网络速度
   - 网络监控：监控网络状态
 
-- **🚀 终端多路复用器 (NEW!)**
+- **🚀 终端多路复用器 (ENHANCED!)**
   - **🎯 零配置启动**：开箱即用，无需复杂配置
   - **⚡ 超轻量级**：纯 Go 实现，启动速度快 3-5 倍
   - **🔧 深度工具集成**：内置网络诊断、文本处理、任务管理
@@ -45,6 +45,9 @@ ClixGo 是一个功能强大的命令行工具集合，提供了多种实用功�
   - **🎨 现代化界面**：支持鼠标操作、主题定制、状态栏定制
   - **🔄 智能恢复**：自动保存和恢复会话状态，包括运行中的命令
   - **📊 内置监控**：集成系统监控和性能分析
+  - **🖥️ PTY支持**：真实进程执行和管理
+  - **🎛️ 多布局渲染**：支持4种不同的面板布局算法
+  - **⚠️ 智能警报**：可配置的性能阈值和自动警报系统
 
 ## 安装
 
@@ -103,26 +106,27 @@ ClixGo alias set "ll" "ls -la"
 ClixGo Terminal 是下一代轻量级终端多路复用器，相比传统 tmux 具有显著优势：
 
 ```bash
-# 创建新会话
+# 基础会话管理
 ClixGo terminal new-session [session-name]
-
-# 连接到现有会话
 ClixGo terminal attach [session-name]
-
-# 列出所有会话
 ClixGo terminal list-sessions
-
-# 销毁会话
 ClixGo terminal kill-session [session-name]
 
-# 启动服务器
+# 服务器管理
 ClixGo terminal server start
-
-# 查看服务器状态
 ClixGo terminal server status
+ClixGo terminal server stop
 
-# 分割窗口
+# 窗口和面板操作
 ClixGo terminal split-window --vertical
+ClixGo terminal split-window --horizontal
+ClixGo terminal switch-window [index]
+ClixGo terminal close-pane [index]
+
+# 增强功能
+ClixGo terminal monitor          # 查看性能监控
+ClixGo terminal stats           # 查看服务器统计
+ClixGo terminal render-ui       # 渲染UI界面
 ```
 
 #### 快捷键操作

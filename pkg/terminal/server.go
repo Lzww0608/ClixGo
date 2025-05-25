@@ -18,6 +18,7 @@ import (
 type TerminalServer struct {
 	config         *TerminalConfig
 	sessionManager *SessionManager
+	monitor        *PerformanceMonitor
 	listener       net.Listener
 	clients        map[string]*ClientConnection
 	socketPath     string
@@ -52,15 +53,20 @@ func NewTerminalServer(config *TerminalConfig) *TerminalServer {
 	os.MkdirAll(socketDir, 0755)
 	socketPath := filepath.Join(socketDir, "clixgo-terminal.sock")
 
+	sessionManager := NewSessionManager(config)
+
 	server := &TerminalServer{
 		config:         config,
-		sessionManager: NewSessionManager(config),
+		sessionManager: sessionManager,
 		clients:        make(map[string]*ClientConnection),
 		socketPath:     socketPath,
 		running:        false,
 		ctx:            ctx,
 		cancel:         cancel,
 	}
+
+	// 创建性能监控器
+	server.monitor = NewPerformanceMonitor(config, sessionManager)
 
 	return server
 }
@@ -96,6 +102,13 @@ func (ts *TerminalServer) Start() error {
 	// 启动自动保存goroutine
 	if ts.config.AutoSave {
 		go ts.autoSave()
+	}
+
+	// 启动性能监控器
+	if ts.monitor != nil {
+		if err := ts.monitor.Start(); err != nil {
+			logger.Warn("Failed to start performance monitor", zap.Error(err))
+		}
 	}
 
 	return nil
@@ -184,7 +197,12 @@ func (ts *TerminalServer) handleClient(conn net.Conn) {
 		default:
 			var cmd Command
 			if err := decoder.Decode(&cmd); err != nil {
-				logger.Error("Failed to decode command", zap.Error(err))
+				// EOF表示客户端正常断开连接，不记录为错误
+				if err.Error() == "EOF" {
+					logger.Debug("Client disconnected normally", zap.String("client_id", client.ID))
+				} else {
+					logger.Error("Failed to decode command", zap.Error(err))
+				}
 				return
 			}
 
