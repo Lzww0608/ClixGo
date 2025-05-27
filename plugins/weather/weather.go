@@ -1,4 +1,4 @@
-package main
+package weather
 
 import (
 	"encoding/json"
@@ -36,9 +36,9 @@ type WeatherData struct {
 		Forecastday []struct {
 			Date string `json:"date"`
 			Day  struct {
-				MaxtempC     float64 `json:"maxtemp_c"`
-				MintempC     float64 `json:"mintemp_c"`
-				Condition    struct {
+				MaxtempC  float64 `json:"maxtemp_c"`
+				MintempC  float64 `json:"mintemp_c"`
+				Condition struct {
 					Text string `json:"text"`
 					Icon string `json:"icon"`
 				} `json:"condition"`
@@ -135,4 +135,4 @@ var Commands = []*cobra.Command{
 			}
 		},
 	},
-} 
+}

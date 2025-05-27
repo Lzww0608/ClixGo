@@ -115,3 +115,8 @@ func Warn(msg string, fields ...zap.Field) {
 	checkInitialized()
 	Log.Warn(msg, fields...)
 }
+
+func Fatal(msg string, fields ...zap.Field) {
+	checkInitialized()
+	Log.Fatal(msg, fields...)
+}
