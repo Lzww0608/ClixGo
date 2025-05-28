@@ -3,6 +3,7 @@ package terminal
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Lzww0608/ClixGo/pkg/logger"
@@ -119,11 +120,11 @@ func (sm *SessionManager) KillSession(sessionID string) error {
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
 
-	// 关闭所有窗口
-	for _, window := range session.Windows {
-		if err := sm.closeWindow(session, window.Index); err != nil {
+	// 关闭所有窗口（从后往前关闭，避免索引变化问题）
+	for i := len(session.Windows) - 1; i >= 0; i-- {
+		if err := sm.closeWindowUnsafe(session, i); err != nil {
 			// 记录错误但继续
-			fmt.Printf("Warning: failed to close window %d: %v\n", window.Index, err)
+			fmt.Printf("Warning: failed to close window %d: %v\n", i, err)
 		}
 	}
 
@@ -196,6 +197,11 @@ func (sm *SessionManager) closeWindow(session *Session, windowIndex int) error {
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
 
+	return sm.closeWindowUnsafe(session, windowIndex)
+}
+
+// closeWindowUnsafe 内部关闭窗口方法（不获取锁，调用者需要确保已获取锁）
+func (sm *SessionManager) closeWindowUnsafe(session *Session, windowIndex int) error {
 	if windowIndex < 0 || windowIndex >= len(session.Windows) {
 		return fmt.Errorf("window index out of range: %d", windowIndex)
 	}
@@ -618,18 +624,250 @@ func (sm *SessionManager) SaveSession(sessionID string, filepath string) error {
 		return err
 	}
 
-	// 这里可以实现会话状态的序列化保存
-	// 可以保存为 JSON 或其他格式
-	_ = filepath
-	_ = session
+	// 创建持久化管理器
+	pm, err := NewPersistenceManager(nil)
+	if err != nil {
+		return fmt.Errorf("创建持久化管理器失败: %w", err)
+	}
 
-	return fmt.Errorf("not implemented yet")
+	// 保存会话快照
+	if err := pm.SaveSession(session); err != nil {
+		return fmt.Errorf("保存会话快照失败: %w", err)
+	}
+
+	logger.Info("会话保存成功",
+		zap.String("session_id", sessionID),
+		zap.String("session_name", session.Name))
+
+	return nil
 }
 
 // LoadSession 加载会话状态
 func (sm *SessionManager) LoadSession(filepath string) (*Session, error) {
-	// 这里可以实现会话状态的反序列化加载
-	_ = filepath
+	// 从文件路径提取会话名称
+	sessionName := extractSessionNameFromPath(filepath)
+	if sessionName == "" {
+		return nil, fmt.Errorf("无法从路径提取会话名称: %s", filepath)
+	}
 
-	return nil, fmt.Errorf("not implemented yet")
+	// 创建持久化管理器
+	pm, err := NewPersistenceManager(nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建持久化管理器失败: %w", err)
+	}
+
+	// 加载会话快照
+	snapshot, err := pm.LoadSession(sessionName)
+	if err != nil {
+		return nil, fmt.Errorf("加载会话快照失败: %w", err)
+	}
+
+	// 恢复会话
+	session, err := pm.RestoreSession(snapshot, sm)
+	if err != nil {
+		return nil, fmt.Errorf("恢复会话失败: %w", err)
+	}
+
+	// 将会话添加到管理器
+	sm.sessions[session.ID] = session
+
+	logger.Info("会话加载成功",
+		zap.String("session_id", session.ID),
+		zap.String("session_name", session.Name))
+
+	return session, nil
+}
+
+// SaveSessionByName 根据名称保存会话
+func (sm *SessionManager) SaveSessionByName(sessionName string) error {
+	session, err := sm.GetSessionByName(sessionName)
+	if err != nil {
+		return err
+	}
+
+	return sm.SaveSession(session.ID, "")
+}
+
+// LoadSessionByName 根据名称加载会话
+func (sm *SessionManager) LoadSessionByName(sessionName string) (*Session, error) {
+	// 创建持久化管理器
+	pm, err := NewPersistenceManager(nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建持久化管理器失败: %w", err)
+	}
+
+	// 加载会话快照
+	snapshot, err := pm.LoadSession(sessionName)
+	if err != nil {
+		return nil, fmt.Errorf("加载会话快照失败: %w", err)
+	}
+
+	// 恢复会话
+	session, err := pm.RestoreSession(snapshot, sm)
+	if err != nil {
+		return nil, fmt.Errorf("恢复会话失败: %w", err)
+	}
+
+	// 将会话添加到管理器
+	sm.sessions[session.ID] = session
+
+	logger.Info("会话加载成功",
+		zap.String("session_id", session.ID),
+		zap.String("session_name", session.Name))
+
+	return session, nil
+}
+
+// ListSavedSessions 列出已保存的会话
+func (sm *SessionManager) ListSavedSessions() ([]string, error) {
+	pm, err := NewPersistenceManager(nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建持久化管理器失败: %w", err)
+	}
+
+	snapshots, err := pm.ListSnapshots()
+	if err != nil {
+		return nil, fmt.Errorf("列出快照失败: %w", err)
+	}
+
+	// 提取会话名称
+	var sessionNames []string
+	for _, snapshot := range snapshots {
+		sessionName := extractSessionNameFromSnapshot(snapshot)
+		if sessionName != "" {
+			sessionNames = append(sessionNames, sessionName)
+		}
+	}
+
+	return sessionNames, nil
+}
+
+// DeleteSavedSession 删除已保存的会话
+func (sm *SessionManager) DeleteSavedSession(sessionName string) error {
+	pm, err := NewPersistenceManager(nil)
+	if err != nil {
+		return fmt.Errorf("创建持久化管理器失败: %w", err)
+	}
+
+	// 查找会话的快照文件
+	snapshots, err := pm.ListSnapshots()
+	if err != nil {
+		return fmt.Errorf("列出快照失败: %w", err)
+	}
+
+	var deleted int
+	prefix := sessionName + "_"
+	for _, snapshot := range snapshots {
+		if strings.HasPrefix(snapshot, prefix) {
+			if err := pm.DeleteSnapshot(snapshot); err != nil {
+				logger.Warn("删除快照失败",
+					zap.String("snapshot", snapshot),
+					zap.Error(err))
+			} else {
+				deleted++
+			}
+		}
+	}
+
+	if deleted == 0 {
+		return fmt.Errorf("未找到会话 %s 的快照", sessionName)
+	}
+
+	logger.Info("删除会话快照",
+		zap.String("session_name", sessionName),
+		zap.Int("deleted_count", deleted))
+
+	return nil
+}
+
+// AutoSaveSession 自动保存会话
+func (sm *SessionManager) AutoSaveSession(sessionID string, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := sm.SaveSession(sessionID, ""); err != nil {
+				logger.Error("自动保存会话失败",
+					zap.String("session_id", sessionID),
+					zap.Error(err))
+			} else {
+				logger.Debug("自动保存会话成功",
+					zap.String("session_id", sessionID))
+			}
+		}
+	}
+}
+
+// extractSessionNameFromPath 从文件路径提取会话名称
+func extractSessionNameFromPath(filepath string) string {
+	filename := filepath
+	if strings.Contains(filepath, "/") {
+		parts := strings.Split(filepath, "/")
+		filename = parts[len(parts)-1]
+	}
+
+	// 移除扩展名
+	if strings.HasSuffix(filename, ".json") {
+		filename = strings.TrimSuffix(filename, ".json")
+	}
+
+	// 提取会话名称（格式：sessionName_YYYYMMDD_HHMMSS）
+	// 时间戳格式固定为：YYYYMMDD_HHMMSS，所以我们需要移除最后两个部分
+	parts := strings.Split(filename, "_")
+	if len(parts) >= 3 {
+		// 检查最后两个部分是否是时间戳格式
+		lastPart := parts[len(parts)-1]
+		secondLastPart := parts[len(parts)-2]
+
+		// 检查是否是时间戳格式：YYYYMMDD_HHMMSS
+		if len(lastPart) == 6 && len(secondLastPart) == 8 {
+			// 验证是否都是数字
+			if isNumeric(lastPart) && isNumeric(secondLastPart) {
+				// 移除时间戳部分
+				return strings.Join(parts[:len(parts)-2], "_")
+			}
+		}
+	}
+
+	// 如果不是标准时间戳格式，返回原始文件名（不移除任何部分）
+	return filename
+}
+
+// extractSessionNameFromSnapshot 从快照文件名提取会话名称
+func extractSessionNameFromSnapshot(snapshot string) string {
+	// 移除扩展名
+	filename := strings.TrimSuffix(snapshot, ".json")
+
+	// 提取会话名称（格式：sessionName_YYYYMMDD_HHMMSS）
+	// 时间戳格式固定为：YYYYMMDD_HHMMSS，所以我们需要移除最后两个部分
+	parts := strings.Split(filename, "_")
+	if len(parts) >= 3 {
+		// 检查最后两个部分是否是时间戳格式
+		lastPart := parts[len(parts)-1]
+		secondLastPart := parts[len(parts)-2]
+
+		// 检查是否是时间戳格式：YYYYMMDD_HHMMSS
+		if len(lastPart) == 6 && len(secondLastPart) == 8 {
+			// 验证是否都是数字
+			if isNumeric(lastPart) && isNumeric(secondLastPart) {
+				// 移除时间戳部分
+				return strings.Join(parts[:len(parts)-2], "_")
+			}
+		}
+	}
+
+	// 如果不是标准时间戳格式，返回原始文件名（不移除任何部分）
+	return filename
+}
+
+// isNumeric 检查字符串是否只包含数字
+func isNumeric(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
