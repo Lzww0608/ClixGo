@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: CLI命令根入口，定义主要的命令结构和初始化
+ */
+
 package cli
 
 import (

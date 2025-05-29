@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 日志系统功能的单元测试
+ */
+
 package logger
 
 import (

@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 文本处理和分析功能的核心实现，包括中文分词、统计等
+ */
+
 package text
 
 import (

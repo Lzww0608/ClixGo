@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 命令历史记录管理的CLI命令定义
+ */
+
 package cli
 
 import (
@@ -5,9 +13,9 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/spf13/cobra"
 	"github.com/Lzww0608/ClixGo/pkg/history"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/spf13/cobra"
 )
 
 func NewHistoryCmd() *cobra.Command {
@@ -84,4 +92,4 @@ func NewHistoryCmd() *cobra.Command {
 	})
 
 	return cmd
-} 
+}

@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 高级命令处理功能的实现，包括AWK、grep、sed等文本处理命令
+ */
+
 package commands
 
 import (

@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 安全管理功能的核心实现，提供命令权限控制和审计
+ */
+
 package security
 
 import (
@@ -252,4 +260,4 @@ func (cm *CommandManager) savePolicies() error {
 	}
 
 	return os.WriteFile(cm.policiesFile, data, 0644)
-} 
+}

@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 终端功能完整示例程序
+ */
+
 package main
 
 import (
@@ -120,7 +128,7 @@ func runCompleteDemo() {
 	}
 
 	// 第四部分：实际使用场景演示
-	fmt.Println("\n��️  第四部分：实际使用场景演示")
+	fmt.Println("\n️  第四部分：实际使用场景演示")
 	if err := withTimeout("实际场景演示", DefaultTimeout, func() error {
 		demonstrateRealWorldScenarios()
 		return nil
