@@ -4,13 +4,22 @@
 *.dll
 *.so
 *.dylib
+
+# Go binary executables (should not be committed)
 gocli
+clixgo
+ClixGo
+netmonitor
+perfmonitor
+ui_demo
 
 # Test binary, built with `go test -c`
 *.test
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+coverage*.html
+coverage*.xml
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -36,4 +45,14 @@ tmp/
 temp/
 
 # Task storage
-.gocli/ 
+.gocli/
+
+# Build output and generated files
+build/
+dist/
+bin/
+
+# Example binaries (usually auto-generated for testing)
+examples/**/complete_demo
+examples/**/taskmanager
+examples/**/*.exe 
