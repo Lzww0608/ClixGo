@@ -565,7 +565,14 @@ func (es *EnhancedTerminalServer) GetStats() *ServerStats {
 	es.stats.mutex.RLock()
 	defer es.stats.mutex.RUnlock()
 
-	// 返回副本
-	stats := *es.stats
-	return &stats
+	// 手动复制字段，避免复制锁
+	return &ServerStats{
+		StartTime:        es.stats.StartTime,
+		TotalConnections: es.stats.TotalConnections,
+		ActiveClients:    es.stats.ActiveClients,
+		CommandsHandled:  es.stats.CommandsHandled,
+		ErrorCount:       es.stats.ErrorCount,
+		PerformanceData:  es.stats.PerformanceData,
+		// 注意：不复制mutex字段
+	}
 }

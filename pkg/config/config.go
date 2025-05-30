@@ -82,9 +82,23 @@ func GetInstance() *ConfigManager {
 // NewConfigManager 创建新的配置管理器
 func NewConfigManager(configPath string) *ConfigManager {
 	v := viper.New()
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-	v.AddConfigPath(configPath)
+
+	// 从配置文件路径中提取目录和文件名
+	configDir := filepath.Dir(configPath)
+	configFile := filepath.Base(configPath)
+	configExt := filepath.Ext(configFile)
+	configName := strings.TrimSuffix(configFile, configExt)
+
+	// 设置viper配置
+	v.SetConfigName(configName)
+	if configExt != "" {
+		// 移除开头的点号
+		configType := strings.TrimPrefix(configExt, ".")
+		v.SetConfigType(configType)
+	} else {
+		v.SetConfigType("yaml") // 默认类型
+	}
+	v.AddConfigPath(configDir)
 
 	cm := &ConfigManager{
 		viper:      v,

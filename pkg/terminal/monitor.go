@@ -380,9 +380,24 @@ func (pm *PerformanceMonitor) GetMetrics() *PerformanceMetrics {
 	pm.metrics.mutex.RLock()
 	defer pm.metrics.mutex.RUnlock()
 
-	// 返回指标的副本
-	metrics := *pm.metrics
-	return &metrics
+	// 手动复制字段，避免复制锁
+	return &PerformanceMetrics{
+		CPUUsage:        pm.metrics.CPUUsage,
+		MemoryUsage:     pm.metrics.MemoryUsage,
+		GoroutineCount:  pm.metrics.GoroutineCount,
+		ActiveSessions:  pm.metrics.ActiveSessions,
+		TotalWindows:    pm.metrics.TotalWindows,
+		TotalPanes:      pm.metrics.TotalPanes,
+		ActivePTYs:      pm.metrics.ActivePTYs,
+		AvgResponseTime: pm.metrics.AvgResponseTime,
+		TotalCommands:   pm.metrics.TotalCommands,
+		ErrorCount:      pm.metrics.ErrorCount,
+		ConnectionCount: pm.metrics.ConnectionCount,
+		DataTransferred: pm.metrics.DataTransferred,
+		Timestamp:       pm.metrics.Timestamp,
+		Uptime:          pm.metrics.Uptime,
+		// 注意：不复制mutex字段
+	}
 }
 
 // SetInterval 设置监控间隔

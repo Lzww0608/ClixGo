@@ -1,0 +1,63 @@
+name: 测试和覆盖率检查
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: 设置Go环境
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+        
+    - name: 缓存Go模块
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        
+    - name: 安装依赖
+      run: go mod download
+      
+    - name: 运行测试
+      run: |
+        chmod +x scripts/test.sh
+        ./scripts/test.sh
+      
+    - name: 上传覆盖率报告
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+      continue-on-error: true
+
+  quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: 设置Go环境
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+        
+    - name: 安装质量检查工具
+      run: |
+        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        
+    - name: 运行质量检查
+      run: |
+        chmod +x scripts/quality-check.sh
+        ./scripts/quality-check.sh
