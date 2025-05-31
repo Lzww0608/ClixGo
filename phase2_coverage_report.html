@@ -1,0 +1,4896 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>network: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/Lzww0608/ClixGo/pkg/network/network.go (48.3%)</option>
+				
+				<option value="file1">github.com/Lzww0608/ClixGo/pkg/network/realtime_monitor.go (84.2%)</option>
+				
+				<option value="file2">github.com/Lzww0608/ClixGo/pkg/network/realtime_ui.go (0.0%)</option>
+				
+				<option value="file3">github.com/Lzww0608/ClixGo/pkg/performance/analyzer.go (89.0%)</option>
+				
+				<option value="file4">github.com/Lzww0608/ClixGo/pkg/performance/optimizer.go (90.8%)</option>
+				
+				<option value="file5">github.com/Lzww0608/ClixGo/pkg/task/manager.go (81.1%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 网络工具和监控功能的核心实现
+ */
+
+package network
+
+import (
+        "bytes"
+        "context"
+        "crypto/tls"
+        "encoding/json"
+        "fmt"
+        "io"
+        "net"
+        "net/http"
+        "os"
+        "strings"
+        "time"
+
+        mqtt "github.com/eclipse/paho.mqtt.golang"
+        "github.com/go-ping/ping"
+        "github.com/gorilla/websocket"
+        "github.com/schollz/progressbar/v3"
+)
+
+// PingResult 表示ping测试的结果
+type PingResult struct {
+        PacketsSent int
+        PacketsRecv int
+        PacketLoss  float64
+        MinRtt      time.Duration
+        MaxRtt      time.Duration
+        AvgRtt      time.Duration
+        StdDevRtt   time.Duration
+}
+
+// Ping 执行ping测试
+func Ping(host string, count int, timeout time.Duration) (*PingResult, error) <span class="cov8" title="1">{
+        pinger, err := ping.NewPinger(host)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">pinger.Count = count
+        pinger.Timeout = timeout
+        pinger.SetPrivileged(true)
+
+        err = pinger.Run()
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">stats := pinger.Statistics()
+        return &amp;PingResult{
+                PacketsSent: stats.PacketsSent,
+                PacketsRecv: stats.PacketsRecv,
+                PacketLoss:  stats.PacketLoss,
+                MinRtt:      stats.MinRtt,
+                MaxRtt:      stats.MaxRtt,
+                AvgRtt:      stats.AvgRtt,
+                StdDevRtt:   stats.StdDevRtt,
+        }, nil</span>
+}
+
+// TracerouteResult 表示路由跟踪的结果
+type TracerouteResult struct {
+        Hop     int
+        IP      string
+        RTT     time.Duration
+        Reached bool
+}
+
+// Traceroute 执行路由跟踪
+func Traceroute(host string, maxHops int) ([]TracerouteResult, error) <span class="cov8" title="1">{
+        results := []TracerouteResult{}
+
+        for ttl := 1; ttl &lt;= maxHops; ttl++ </span><span class="cov8" title="1">{
+                conn, err := net.Dial("ip4:icmp", host)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov0" title="0">defer conn.Close()
+
+                // 设置TTL
+                ipconn, ok := conn.(*net.IPConn)
+                if !ok </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("无法转换为IPConn")
+                }</span>
+
+                <span class="cov0" title="0">file, err := ipconn.File()
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov0" title="0">defer file.Close()
+
+                timeout := 1 * time.Second
+                conn.SetDeadline(time.Now().Add(timeout))
+                start := time.Now()
+
+                // 简化ICMP消息构建，避免使用ping库内部结构
+                // 构建简单的ICMP Echo请求
+                icmpMessage := []byte{
+                        8,    // Echo请求类型
+                        0,    // 代码
+                        0, 0, // 校验和（会被重新计算）
+                        0, 0, // 标识符
+                        0, 0, // 序列号
+                }
+
+                // 添加数据
+                icmpMessage = append(icmpMessage, bytes.Repeat([]byte{1}, 32)...)
+
+                // 计算校验和
+                checksum := calculateChecksum(icmpMessage)
+                icmpMessage[2] = byte(checksum &gt;&gt; 8)
+                icmpMessage[3] = byte(checksum)
+
+                _, err = conn.Write(icmpMessage)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+
+                <span class="cov0" title="0">reply := make([]byte, 1500)
+                _, err = conn.Read(reply)
+                if err != nil </span><span class="cov0" title="0">{
+                        if neterr, ok := err.(net.Error); ok &amp;&amp; neterr.Timeout() </span><span class="cov0" title="0">{
+                                results = append(results, TracerouteResult{
+                                        Hop:     ttl,
+                                        IP:      "*",
+                                        RTT:     0,
+                                        Reached: false,
+                                })
+                                continue</span>
+                        }
+                        <span class="cov0" title="0">return nil, err</span>
+                }
+
+                <span class="cov0" title="0">rtt := time.Since(start)
+                results = append(results, TracerouteResult{
+                        Hop:     ttl,
+                        IP:      conn.RemoteAddr().String(),
+                        RTT:     rtt,
+                        Reached: true,
+                })
+
+                if conn.RemoteAddr().String() == host </span><span class="cov0" title="0">{
+                        break</span>
+                }
+        }
+
+        <span class="cov0" title="0">return results, nil</span>
+}
+
+// 添加校验和计算函数
+func calculateChecksum(bytes []byte) uint16 <span class="cov8" title="1">{
+        length := len(bytes)
+        var sum uint32
+        for i := 0; i &lt; length-1; i += 2 </span><span class="cov8" title="1">{
+                sum += uint32(bytes[i])&lt;&lt;8 | uint32(bytes[i+1])
+        }</span>
+        <span class="cov8" title="1">if length%2 == 1 </span><span class="cov0" title="0">{
+                sum += uint32(bytes[length-1]) &lt;&lt; 8
+        }</span>
+        <span class="cov8" title="1">sum = (sum &gt;&gt; 16) + (sum &amp; 0xffff)
+        sum = sum + (sum &gt;&gt; 16)
+        return uint16(^sum)</span>
+}
+
+// DNSLookup 执行DNS查询
+func DNSLookup(host string) ([]string, error) <span class="cov8" title="1">{
+        ips, err := net.LookupIP(host)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">result := make([]string, len(ips))
+        for i, ip := range ips </span><span class="cov8" title="1">{
+                result[i] = ip.String()
+        }</span>
+        <span class="cov8" title="1">return result, nil</span>
+}
+
+// HTTPGet 发送HTTP GET请求
+func HTTPGet(url string, timeout time.Duration) (string, error) <span class="cov8" title="1">{
+        client := &amp;http.Client{
+                Timeout: timeout,
+        }
+
+        resp, err := client.Get(url)
+        if err != nil </span><span class="cov8" title="1">{
+                return "", err
+        }</span>
+        <span class="cov8" title="1">defer resp.Body.Close()
+
+        body, err := io.ReadAll(resp.Body)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+
+        <span class="cov8" title="1">return string(body), nil</span>
+}
+
+// CheckPort 检查端口是否开放
+func CheckPort(host string, port int, timeout time.Duration) (bool, error) <span class="cov8" title="1">{
+        conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
+        if err != nil </span><span class="cov8" title="1">{
+                return false, nil
+        }</span>
+        <span class="cov8" title="1">defer conn.Close()
+        return true, nil</span>
+}
+
+// IPInfo 表示IP地址的详细信息
+type IPInfo struct {
+        IP      string
+        Country string
+        Region  string
+        City    string
+        ISP     string
+}
+
+// GetIPInfo 获取IP地址的详细信息
+func GetIPInfo(ip string) (*IPInfo, error) <span class="cov0" title="0">{
+        // 这里使用ip-api.com的API
+        url := fmt.Sprintf("http://ip-api.com/json/%s", ip)
+        client := &amp;http.Client{
+                Timeout: time.Second * 5,
+        }
+
+        resp, err := client.Get(url)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">defer resp.Body.Close()
+
+        var info IPInfo
+        if err := json.NewDecoder(resp.Body).Decode(&amp;info); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return &amp;info, nil</span>
+}
+
+// DownloadFile 下载文件
+func DownloadFile(url, filename string, timeout time.Duration) error <span class="cov8" title="1">{
+        client := &amp;http.Client{
+                Timeout: timeout,
+        }
+
+        resp, err := client.Get(url)
+        if err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">defer resp.Body.Close()
+
+        file, err := os.Create(filename)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">defer file.Close()
+
+        bar := progressbar.DefaultBytes(
+                resp.ContentLength,
+                "下载中",
+        )
+
+        _, err = io.Copy(io.MultiWriter(file, bar), resp.Body)
+        return err</span>
+}
+
+// SSLInfo 表示SSL证书信息
+type SSLInfo struct {
+        Issuer string
+        Expiry time.Time
+}
+
+// CheckSSL 检查SSL证书
+func CheckSSL(host string) (*SSLInfo, error) <span class="cov8" title="1">{
+        conn, err := tls.Dial("tcp", host+":443", &amp;tls.Config{
+                InsecureSkipVerify: true,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">defer conn.Close()
+
+        cert := conn.ConnectionState().PeerCertificates[0]
+        return &amp;SSLInfo{
+                Issuer: cert.Issuer.CommonName,
+                Expiry: cert.NotAfter,
+        }, nil</span>
+}
+
+// SpeedTestResult 表示网络速度测试结果
+type SpeedTestResult struct {
+        Download float64
+        Upload   float64
+}
+
+// NetworkSpeedTest 执行网络速度测试
+func NetworkSpeedTest() (*SpeedTestResult, error) <span class="cov0" title="0">{
+        // 这里使用speedtest-cli的实现
+        // 实际实现需要根据具体需求选择合适的速度测试服务
+        return &amp;SpeedTestResult{
+                Download: 0,
+                Upload:   0,
+        }, nil
+}</span>
+
+// NetworkMonitor 表示网络监控配置
+type NetworkMonitor struct {
+        Targets     []string
+        Interval    time.Duration
+        Timeout     time.Duration
+        AlertConfig AlertConfig
+}
+
+// AlertConfig 表示告警配置
+type AlertConfig struct {
+        Enabled      bool
+        Threshold    float64
+        Email        string
+        Webhook      string
+        SMS          string
+        SlackWebhook string
+        RepeatAfter  time.Duration
+}
+
+// MonitorResult 表示监控结果
+type MonitorResult struct {
+        Target     string
+        Status     string
+        Latency    time.Duration
+        PacketLoss float64
+        Timestamp  time.Time
+        Error      error
+}
+
+// StartMonitoring 开始网络监控
+func StartMonitoring(config NetworkMonitor) (&lt;-chan MonitorResult, context.CancelFunc) <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(context.Background())
+        results := make(chan MonitorResult)
+
+        go func() </span><span class="cov8" title="1">{
+                ticker := time.NewTicker(config.Interval)
+                defer ticker.Stop()
+                defer close(results)
+
+                for </span><span class="cov8" title="1">{
+                        select </span>{
+                        case &lt;-ctx.Done():<span class="cov8" title="1">
+                                return</span>
+                        case &lt;-ticker.C:<span class="cov8" title="1">
+                                for _, target := range config.Targets </span><span class="cov8" title="1">{
+                                        result := MonitorResult{
+                                                Target:    target,
+                                                Timestamp: time.Now(),
+                                        }
+
+                                        pingResult, err := Ping(target, 4, config.Timeout)
+                                        if err != nil </span><span class="cov8" title="1">{
+                                                result.Status = "ERROR"
+                                                result.Error = err
+                                        }</span> else<span class="cov0" title="0"> {
+                                                result.Status = "OK"
+                                                result.Latency = pingResult.AvgRtt
+                                                result.PacketLoss = pingResult.PacketLoss
+                                        }</span>
+
+                                        <span class="cov8" title="1">results &lt;- result</span>
+                                }
+                        }
+                }
+        }()
+
+        <span class="cov8" title="1">return results, cancel</span>
+}
+
+// NetworkConfig 表示网络配置
+type NetworkConfig struct {
+        Interface string
+        IP        string
+        Netmask   string
+        Gateway   string
+        DNS       []string
+        MTU       int
+}
+
+// GetNetworkConfig 获取网络配置
+func GetNetworkConfig(iface string) (*NetworkConfig, error) <span class="cov8" title="1">{
+        interfaces, err := net.Interfaces()
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">for _, i := range interfaces </span><span class="cov8" title="1">{
+                if i.Name == iface </span><span class="cov8" title="1">{
+                        addrs, err := i.Addrs()
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, err
+                        }</span>
+
+                        <span class="cov8" title="1">config := &amp;NetworkConfig{
+                                Interface: i.Name,
+                                MTU:       i.MTU,
+                        }
+
+                        for _, addr := range addrs </span><span class="cov8" title="1">{
+                                if ipnet, ok := addr.(*net.IPNet); ok &amp;&amp; !ipnet.IP.IsLoopback() </span><span class="cov0" title="0">{
+                                        if ipnet.IP.To4() != nil </span><span class="cov0" title="0">{
+                                                config.IP = ipnet.IP.String()
+                                                config.Netmask = net.IP(ipnet.Mask).String()
+                                        }</span>
+                                }
+                        }
+
+                        // 获取默认网关
+                        <span class="cov8" title="1">gateway, err := getDefaultGateway()
+                        if err == nil </span><span class="cov0" title="0">{
+                                config.Gateway = gateway
+                        }</span>
+
+                        // 获取DNS配置
+                        <span class="cov8" title="1">dns, err := getDNSConfig()
+                        if err == nil </span><span class="cov0" title="0">{
+                                config.DNS = dns
+                        }</span>
+
+                        <span class="cov8" title="1">return config, nil</span>
+                }
+        }
+
+        <span class="cov8" title="1">return nil, fmt.Errorf("未找到网络接口: %s", iface)</span>
+}
+
+// SetNetworkConfig 设置网络配置
+func SetNetworkConfig(config NetworkConfig) error <span class="cov8" title="1">{
+        // 这里需要根据操作系统实现具体的网络配置设置
+        // 在Windows上可以使用netsh命令
+        // 在Linux上可以使用ip命令
+        return fmt.Errorf("网络配置设置功能尚未实现")
+}</span>
+
+// BandwidthTest 表示带宽测试结果
+type BandwidthTest struct {
+        DownloadSpeed float64 // Mbps
+        UploadSpeed   float64 // Mbps
+        Jitter        float64 // ms
+        Latency       float64 // ms
+}
+
+// TestBandwidth 测试网络带宽
+func TestBandwidth(server string) (*BandwidthTest, error) <span class="cov8" title="1">{
+        // 这里可以使用speedtest.net的API或其他带宽测试服务
+        return &amp;BandwidthTest{
+                DownloadSpeed: 0,
+                UploadSpeed:   0,
+                Jitter:        0,
+                Latency:       0,
+        }, nil
+}</span>
+
+// PacketCapture 表示数据包捕获配置
+type PacketCapture struct {
+        Interface string
+        Filter    string
+        Count     int
+        Timeout   time.Duration
+}
+
+// StartPacketCapture 开始数据包捕获
+func StartPacketCapture(config PacketCapture) (&lt;-chan []byte, context.CancelFunc) <span class="cov0" title="0">{
+        ctx, cancel := context.WithCancel(context.Background())
+        packets := make(chan []byte)
+
+        go func() </span><span class="cov0" title="0">{
+                defer close(packets)
+                // 使用ctx以避免未使用变量警告
+                &lt;-ctx.Done()
+                // 这里需要根据操作系统实现具体的数据包捕获
+                // 可以使用libpcap或npcap等库
+        }</span>()
+
+        <span class="cov0" title="0">return packets, cancel</span>
+}
+
+// NetworkDiagnostic 表示网络诊断结果
+type NetworkDiagnostic struct {
+        Connectivity bool
+        DNS          bool
+        Gateway      bool
+        Internet     bool
+        Issues       []string
+}
+
+// RunDiagnostic 运行网络诊断
+func RunDiagnostic() (*NetworkDiagnostic, error) <span class="cov8" title="1">{
+        diagnostic := &amp;NetworkDiagnostic{
+                Issues: make([]string, 0),
+        }
+
+        // 检查本地连接
+        interfaces, err := net.Interfaces()
+        if err != nil </span><span class="cov0" title="0">{
+                diagnostic.Issues = append(diagnostic.Issues, "无法获取网络接口信息")
+        }</span> else<span class="cov8" title="1"> {
+                diagnostic.Connectivity = len(interfaces) &gt; 0
+        }</span>
+
+        // 检查DNS
+        <span class="cov8" title="1">_, err = net.LookupIP("google.com")
+        if err != nil </span><span class="cov0" title="0">{
+                diagnostic.DNS = false
+                diagnostic.Issues = append(diagnostic.Issues, "DNS解析失败")
+        }</span> else<span class="cov8" title="1"> {
+                diagnostic.DNS = true
+        }</span>
+
+        // 检查网关
+        // 获取默认网关但不使用返回值，只检查是否成功
+        <span class="cov8" title="1">_, gatewayErr := getDefaultGateway()
+        if gatewayErr != nil </span><span class="cov8" title="1">{
+                diagnostic.Gateway = false
+                diagnostic.Issues = append(diagnostic.Issues, "无法获取默认网关")
+        }</span> else<span class="cov0" title="0"> {
+                diagnostic.Gateway = true
+        }</span>
+
+        // 检查互联网连接
+        <span class="cov8" title="1">client := &amp;http.Client{
+                Timeout: 5 * time.Second,
+        }
+        _, err = client.Get("http://www.google.com")
+        if err != nil </span><span class="cov8" title="1">{
+                diagnostic.Internet = false
+                diagnostic.Issues = append(diagnostic.Issues, "无法连接到互联网")
+        }</span> else<span class="cov0" title="0"> {
+                diagnostic.Internet = true
+        }</span>
+
+        <span class="cov8" title="1">return diagnostic, nil</span>
+}
+
+// 辅助函数
+func getDefaultGateway() (string, error) <span class="cov8" title="1">{
+        // 这里需要根据操作系统实现获取默认网关的方法
+        return "", fmt.Errorf("获取默认网关功能尚未实现")
+}</span>
+
+func getDNSConfig() ([]string, error) <span class="cov8" title="1">{
+        // 这里需要根据操作系统实现获取DNS配置的方法
+        return nil, fmt.Errorf("获取DNS配置功能尚未实现")
+}</span>
+
+// ProtocolTest 表示协议测试结果
+type ProtocolTest struct {
+        Protocol string
+        Status   string
+        Latency  time.Duration
+        Error    error
+}
+
+// TestProtocol 测试特定协议
+func TestProtocol(target string, protocol string) (*ProtocolTest, error) <span class="cov8" title="1">{
+        result := &amp;ProtocolTest{
+                Protocol: protocol,
+        }
+
+        switch strings.ToLower(protocol) </span>{
+        case "http":<span class="cov8" title="1">
+                start := time.Now()
+                resp, err := http.Get("http://" + target)
+                if err != nil </span><span class="cov8" title="1">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov8" title="1"> {
+                        defer resp.Body.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "https":<span class="cov0" title="0">
+                start := time.Now()
+                resp, err := http.Get("https://" + target)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        defer resp.Body.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "dns":<span class="cov8" title="1">
+                start := time.Now()
+                _, err := net.LookupIP(target)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov8" title="1"> {
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "ftp":<span class="cov0" title="0">
+                start := time.Now()
+                conn, err := net.DialTimeout("tcp", target+":21", 5*time.Second)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        defer conn.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "smtp":<span class="cov0" title="0">
+                start := time.Now()
+                conn, err := net.DialTimeout("tcp", target+":25", 5*time.Second)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        defer conn.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "ssh":<span class="cov0" title="0">
+                start := time.Now()
+                conn, err := net.DialTimeout("tcp", target+":22", 5*time.Second)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        defer conn.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "mqtt":<span class="cov0" title="0">
+                start := time.Now()
+                opts := mqtt.NewClientOptions().AddBroker("tcp://" + target + ":1883")
+                client := mqtt.NewClient(opts)
+                if token := client.Connect(); token.Wait() &amp;&amp; token.Error() != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = token.Error()
+                }</span> else<span class="cov0" title="0"> {
+                        client.Disconnect(250)
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "websocket":<span class="cov0" title="0">
+                start := time.Now()
+                dialer := websocket.Dialer{
+                        HandshakeTimeout: 5 * time.Second,
+                }
+                conn, _, err := dialer.Dial("ws://"+target, nil)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        conn.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "rtsp":<span class="cov0" title="0">
+                start := time.Now()
+                conn, err := net.DialTimeout("tcp", target+":554", 5*time.Second)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        defer conn.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "rtmp":<span class="cov0" title="0">
+                start := time.Now()
+                conn, err := net.DialTimeout("tcp", target+":1935", 5*time.Second)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        defer conn.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        case "sip":<span class="cov0" title="0">
+                start := time.Now()
+                conn, err := net.DialTimeout("tcp", target+":5060", 5*time.Second)
+                if err != nil </span><span class="cov0" title="0">{
+                        result.Status = "ERROR"
+                        result.Error = err
+                }</span> else<span class="cov0" title="0"> {
+                        defer conn.Close()
+                        result.Status = "OK"
+                        result.Latency = time.Since(start)
+                }</span>
+
+        default:<span class="cov8" title="1">
+                return nil, fmt.Errorf("不支持的协议: %s", protocol)</span>
+        }
+
+        <span class="cov8" title="1">return result, nil</span>
+}
+
+// NetworkPerformance 表示网络性能指标
+type NetworkPerformance struct {
+        Bandwidth      float64 // Mbps
+        Latency        float64 // ms
+        Jitter         float64 // ms
+        PacketLoss     float64 // %
+        Throughput     float64 // Mbps
+        Retransmission float64 // %
+        ConnectionTime float64 // ms
+}
+
+// AnalyzePerformance 分析网络性能
+func AnalyzePerformance(target string, duration time.Duration) (*NetworkPerformance, error) <span class="cov8" title="1">{
+        // 创建性能分析结果
+        performance := &amp;NetworkPerformance{}
+
+        // 测试带宽
+        bandwidthTest, err := TestBandwidth(target)
+        if err == nil </span><span class="cov8" title="1">{
+                performance.Bandwidth = bandwidthTest.DownloadSpeed
+        }</span>
+
+        // 测试延迟和抖动
+        <span class="cov8" title="1">pingResult, err := Ping(target, 10, 5*time.Second)
+        if err == nil </span><span class="cov0" title="0">{
+                performance.Latency = pingResult.AvgRtt.Seconds() * 1000
+                performance.Jitter = calculateJitter(pingResult)
+                performance.PacketLoss = pingResult.PacketLoss
+        }</span>
+
+        // 测试吞吐量
+        <span class="cov8" title="1">throughput, err := testThroughput(target, duration)
+        if err == nil </span><span class="cov0" title="0">{
+                performance.Throughput = throughput
+        }</span>
+
+        // 测试重传率
+        <span class="cov8" title="1">retransmission, err := testRetransmission(target)
+        if err == nil </span><span class="cov0" title="0">{
+                performance.Retransmission = retransmission
+        }</span>
+
+        // 测试连接时间
+        <span class="cov8" title="1">connectionTime, err := testConnectionTime(target)
+        if err == nil </span><span class="cov0" title="0">{
+                performance.ConnectionTime = connectionTime
+        }</span>
+
+        <span class="cov8" title="1">return performance, nil</span>
+}
+
+// TrafficStats 表示流量统计
+type TrafficStats struct {
+        Interface  string
+        BytesIn    uint64
+        BytesOut   uint64
+        PacketsIn  uint64
+        PacketsOut uint64
+        ErrorsIn   uint64
+        ErrorsOut  uint64
+        DropsIn    uint64
+        DropsOut   uint64
+        Timestamp  time.Time
+}
+
+// GetTrafficStats 获取流量统计
+func GetTrafficStats(iface string) (*TrafficStats, error) <span class="cov0" title="0">{
+        // 这里需要根据操作系统实现获取流量统计的方法
+        // 在Linux上可以使用/proc/net/dev
+        // 在Windows上可以使用GetIfTable
+        return nil, fmt.Errorf("获取流量统计功能尚未实现")
+}</span>
+
+// NetworkOptimization 表示网络优化建议
+type NetworkOptimization struct {
+        Interface         string
+        CurrentMTU        int
+        RecommendedMTU    int
+        CurrentDNS        []string
+        RecommendedDNS    []string
+        CurrentBuffer     int
+        RecommendedBuffer int
+        Issues            []string
+        Suggestions       []string
+}
+
+// OptimizeNetwork 优化网络配置
+func OptimizeNetwork(iface string) (*NetworkOptimization, error) <span class="cov8" title="1">{
+        optimization := &amp;NetworkOptimization{
+                Interface: iface,
+        }
+
+        // 获取当前配置
+        config, err := GetNetworkConfig(iface)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">optimization.CurrentMTU = config.MTU
+        optimization.CurrentDNS = config.DNS
+
+        // 分析MTU
+        if config.MTU &gt; 1500 </span><span class="cov8" title="1">{
+                optimization.RecommendedMTU = 1500
+                optimization.Issues = append(optimization.Issues, "MTU过大可能导致分片")
+                optimization.Suggestions = append(optimization.Suggestions, "建议将MTU设置为1500")
+        }</span>
+
+        // 分析DNS
+        <span class="cov8" title="1">if len(config.DNS) &lt; 2 </span><span class="cov8" title="1">{
+                optimization.RecommendedDNS = []string{"8.8.8.8", "8.8.4.4"}
+                optimization.Issues = append(optimization.Issues, "DNS服务器数量不足")
+                optimization.Suggestions = append(optimization.Suggestions, "建议添加备用DNS服务器")
+        }</span>
+
+        // 分析缓冲区大小
+        <span class="cov8" title="1">optimization.CurrentBuffer = getCurrentBufferSize(iface)
+        if optimization.CurrentBuffer &lt; 4096 </span><span class="cov8" title="1">{
+                optimization.RecommendedBuffer = 4096
+                optimization.Issues = append(optimization.Issues, "网络缓冲区过小")
+                optimization.Suggestions = append(optimization.Suggestions, "建议增加网络缓冲区大小")
+        }</span>
+
+        <span class="cov8" title="1">return optimization, nil</span>
+}
+
+// AlertManager 表示告警管理器
+type AlertManager struct {
+        Config    AlertConfig
+        LastAlert time.Time
+}
+
+// NewAlertManager 创建告警管理器
+func NewAlertManager(config AlertConfig) *AlertManager <span class="cov8" title="1">{
+        return &amp;AlertManager{
+                Config: config,
+        }
+}</span>
+
+// SendAlert 发送告警
+func (am *AlertManager) SendAlert(message string) error <span class="cov8" title="1">{
+        // 检查是否在重复告警间隔内
+        if time.Since(am.LastAlert) &lt; am.Config.RepeatAfter </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        // 发送邮件告警
+        <span class="cov8" title="1">if am.Config.Email != "" </span><span class="cov8" title="1">{
+                if err := sendEmailAlert(am.Config.Email, message); err != nil </span><span class="cov8" title="1">{
+                        return err
+                }</span>
+        }
+
+        // 发送Webhook告警
+        <span class="cov0" title="0">if am.Config.Webhook != "" </span><span class="cov0" title="0">{
+                if err := sendWebhookAlert(am.Config.Webhook, message); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+
+        // 发送短信告警
+        <span class="cov0" title="0">if am.Config.SMS != "" </span><span class="cov0" title="0">{
+                if err := sendSMSAlert(am.Config.SMS, message); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+
+        // 发送Slack告警
+        <span class="cov0" title="0">if am.Config.SlackWebhook != "" </span><span class="cov0" title="0">{
+                if err := sendSlackAlert(am.Config.SlackWebhook, message); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+
+        <span class="cov0" title="0">am.LastAlert = time.Now()
+        return nil</span>
+}
+
+// 辅助函数
+func calculateJitter(pingResult *PingResult) float64 <span class="cov8" title="1">{
+        // 计算抖动（RTT的标准差）
+        return pingResult.StdDevRtt.Seconds() * 1000
+}</span>
+
+func testThroughput(target string, duration time.Duration) (float64, error) <span class="cov8" title="1">{
+        // 这里需要实现吞吐量测试
+        return 0, fmt.Errorf("吞吐量测试功能尚未实现")
+}</span>
+
+func testRetransmission(target string) (float64, error) <span class="cov8" title="1">{
+        // 这里需要实现重传率测试
+        return 0, fmt.Errorf("重传率测试功能尚未实现")
+}</span>
+
+func testConnectionTime(target string) (float64, error) <span class="cov8" title="1">{
+        // 这里需要实现连接时间测试
+        return 0, fmt.Errorf("连接时间测试功能尚未实现")
+}</span>
+
+func getCurrentBufferSize(iface string) int <span class="cov8" title="1">{
+        // 这里需要根据操作系统实现获取缓冲区大小的方法
+        return 0
+}</span>
+
+func sendEmailAlert(email, message string) error <span class="cov8" title="1">{
+        // 这里需要实现邮件发送功能
+        return fmt.Errorf("邮件告警功能尚未实现")
+}</span>
+
+func sendWebhookAlert(webhook, message string) error <span class="cov0" title="0">{
+        // 这里需要实现Webhook发送功能
+        return fmt.Errorf("Webhook告警功能尚未实现")
+}</span>
+
+func sendSMSAlert(phone, message string) error <span class="cov0" title="0">{
+        // 这里需要实现短信发送功能
+        return fmt.Errorf("短信告警功能尚未实现")
+}</span>
+
+func sendSlackAlert(webhook, message string) error <span class="cov0" title="0">{
+        // 这里需要实现Slack发送功能
+        return fmt.Errorf("Slack告警功能尚未实现")
+}</span>
+
+// TrafficAnalysis 表示流量分析结果
+type TrafficAnalysis struct {
+        Interface       string
+        ProtocolStats   map[string]ProtocolStat
+        ConnectionStats ConnectionStats
+        BandwidthUsage  BandwidthUsage
+        Timestamp       time.Time
+}
+
+// ProtocolStat 表示协议统计
+type ProtocolStat struct {
+        Packets    uint64
+        Bytes      uint64
+        Percentage float64
+}
+
+// ConnectionStats 表示连接状态统计
+type ConnectionStats struct {
+        TotalConnections  int
+        ActiveConnections int
+        TCPConnections    int
+        UDPConnections    int
+        Established       int
+        TimeWait          int
+        CloseWait         int
+}
+
+// BandwidthUsage 表示带宽使用情况
+type BandwidthUsage struct {
+        CurrentIn   float64 // Mbps
+        CurrentOut  float64 // Mbps
+        PeakIn      float64 // Mbps
+        PeakOut     float64 // Mbps
+        AverageIn   float64 // Mbps
+        AverageOut  float64 // Mbps
+        Utilization float64 // %
+}
+
+// AnalyzeTraffic 分析网络流量
+func AnalyzeTraffic(iface string, duration time.Duration) (*TrafficAnalysis, error) <span class="cov0" title="0">{
+        analysis := &amp;TrafficAnalysis{
+                Interface:     iface,
+                ProtocolStats: make(map[string]ProtocolStat),
+                Timestamp:     time.Now(),
+        }
+
+        // 获取协议分布
+        protocols := []string{"tcp", "udp", "icmp", "http", "https", "dns", "ssh", "ftp"}
+        for _, proto := range protocols </span><span class="cov0" title="0">{
+                stats, err := getProtocolStats(iface, proto)
+                if err == nil </span><span class="cov0" title="0">{
+                        analysis.ProtocolStats[proto] = stats
+                }</span>
+        }
+
+        // 获取连接状态
+        <span class="cov0" title="0">connStats, err := getConnectionStats()
+        if err == nil </span><span class="cov0" title="0">{
+                analysis.ConnectionStats = connStats
+        }</span>
+
+        // 获取带宽使用情况
+        <span class="cov0" title="0">bwUsage, err := getBandwidthUsage(iface, duration)
+        if err == nil </span><span class="cov0" title="0">{
+                analysis.BandwidthUsage = bwUsage
+        }</span>
+
+        <span class="cov0" title="0">return analysis, nil</span>
+}
+
+// NetworkQuality 表示网络质量评分
+type NetworkQuality struct {
+        Score            float64 // 0-100
+        LatencyScore     float64 // 0-100
+        StabilityScore   float64 // 0-100
+        SpeedScore       float64 // 0-100
+        ReliabilityScore float64 // 0-100
+        Issues           []string
+        Recommendations  []string
+}
+
+// EvaluateQuality 评估网络质量
+func EvaluateQuality(target string, duration time.Duration) (*NetworkQuality, error) <span class="cov8" title="1">{
+        quality := &amp;NetworkQuality{
+                Issues:          make([]string, 0),
+                Recommendations: make([]string, 0),
+        }
+
+        // 测试延迟
+        pingResult, err := Ping(target, 10, 5*time.Second)
+        if err == nil </span><span class="cov0" title="0">{
+                quality.LatencyScore = calculateLatencyScore(pingResult.AvgRtt)
+                if pingResult.AvgRtt &gt; 100*time.Millisecond </span><span class="cov0" title="0">{
+                        quality.Issues = append(quality.Issues, "网络延迟较高")
+                        quality.Recommendations = append(quality.Recommendations, "建议优化网络路由")
+                }</span>
+        }
+
+        // 测试稳定性
+        <span class="cov8" title="1">stabilityScore, err := evaluateStability(target, duration)
+        if err == nil </span><span class="cov0" title="0">{
+                quality.StabilityScore = stabilityScore
+                if stabilityScore &lt; 80 </span><span class="cov0" title="0">{
+                        quality.Issues = append(quality.Issues, "网络稳定性不足")
+                        quality.Recommendations = append(quality.Recommendations, "建议检查网络设备")
+                }</span>
+        }
+
+        // 测试速度
+        <span class="cov8" title="1">speedScore, err := evaluateSpeed(target)
+        if err == nil </span><span class="cov0" title="0">{
+                quality.SpeedScore = speedScore
+                if speedScore &lt; 70 </span><span class="cov0" title="0">{
+                        quality.Issues = append(quality.Issues, "网络速度较慢")
+                        quality.Recommendations = append(quality.Recommendations, "建议升级网络带宽")
+                }</span>
+        }
+
+        // 测试可靠性
+        <span class="cov8" title="1">reliabilityScore, err := evaluateReliability(target)
+        if err == nil </span><span class="cov0" title="0">{
+                quality.ReliabilityScore = reliabilityScore
+                if reliabilityScore &lt; 90 </span><span class="cov0" title="0">{
+                        quality.Issues = append(quality.Issues, "网络可靠性需要提升")
+                        quality.Recommendations = append(quality.Recommendations, "建议增加网络冗余")
+                }</span>
+        }
+
+        // 计算总分
+        <span class="cov8" title="1">quality.Score = (quality.LatencyScore + quality.StabilityScore +
+                quality.SpeedScore + quality.ReliabilityScore) / 4
+
+        return quality, nil</span>
+}
+
+// NetworkConfigBackup 表示网络配置备份
+type NetworkConfigBackup struct {
+        Timestamp time.Time
+        Config    NetworkConfig
+        Interface string
+        BackupID  string
+}
+
+// BackupNetworkConfig 备份网络配置
+func BackupNetworkConfig(iface string) (*NetworkConfigBackup, error) <span class="cov8" title="1">{
+        config, err := GetNetworkConfig(iface)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">backup := &amp;NetworkConfigBackup{
+                Timestamp: time.Now(),
+                Config:    *config,
+                Interface: iface,
+                BackupID:  generateBackupID(),
+        }
+
+        // 保存备份
+        if err := saveBackup(backup); err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return backup, nil</span>
+}
+
+// RestoreNetworkConfig 恢复网络配置
+func RestoreNetworkConfig(backupID string) error <span class="cov0" title="0">{
+        backup, err := loadBackup(backupID)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // 应用配置
+        <span class="cov0" title="0">if err := SetNetworkConfig(backup.Config); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// 辅助函数
+func getProtocolStats(iface, protocol string) (ProtocolStat, error) <span class="cov0" title="0">{
+        // 这里需要根据操作系统实现获取协议统计的方法
+        return ProtocolStat{}, fmt.Errorf("获取协议统计功能尚未实现")
+}</span>
+
+func getConnectionStats() (ConnectionStats, error) <span class="cov0" title="0">{
+        // 这里需要根据操作系统实现获取连接状态的方法
+        return ConnectionStats{}, fmt.Errorf("获取连接状态功能尚未实现")
+}</span>
+
+func getBandwidthUsage(iface string, duration time.Duration) (BandwidthUsage, error) <span class="cov0" title="0">{
+        // 这里需要实现获取带宽使用情况的方法
+        return BandwidthUsage{}, fmt.Errorf("获取带宽使用情况功能尚未实现")
+}</span>
+
+func calculateLatencyScore(latency time.Duration) float64 <span class="cov8" title="1">{
+        // 根据延迟计算分数
+        if latency &lt; 20*time.Millisecond </span><span class="cov8" title="1">{
+                return 100
+        }</span> else<span class="cov8" title="1"> if latency &lt; 50*time.Millisecond </span><span class="cov8" title="1">{
+                return 90
+        }</span> else<span class="cov8" title="1"> if latency &lt; 100*time.Millisecond </span><span class="cov8" title="1">{
+                return 80
+        }</span> else<span class="cov8" title="1"> if latency &lt; 200*time.Millisecond </span><span class="cov8" title="1">{
+                return 60
+        }</span> else<span class="cov8" title="1"> {
+                return 40
+        }</span>
+}
+
+func evaluateStability(target string, duration time.Duration) (float64, error) <span class="cov8" title="1">{
+        // 这里需要实现稳定性评估
+        return 0, fmt.Errorf("稳定性评估功能尚未实现")
+}</span>
+
+func evaluateSpeed(target string) (float64, error) <span class="cov8" title="1">{
+        // 这里需要实现速度评估
+        return 0, fmt.Errorf("速度评估功能尚未实现")
+}</span>
+
+func evaluateReliability(target string) (float64, error) <span class="cov8" title="1">{
+        // 这里需要实现可靠性评估
+        return 0, fmt.Errorf("可靠性评估功能尚未实现")
+}</span>
+
+func generateBackupID() string <span class="cov8" title="1">{
+        return fmt.Sprintf("backup-%d", time.Now().Unix())
+}</span>
+
+func saveBackup(backup *NetworkConfigBackup) error <span class="cov8" title="1">{
+        // 这里需要实现备份保存功能
+        return fmt.Errorf("备份保存功能尚未实现")
+}</span>
+
+func loadBackup(backupID string) (*NetworkConfigBackup, error) <span class="cov0" title="0">{
+        // 这里需要实现备份加载功能
+        return nil, fmt.Errorf("备份加载功能尚未实现")
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-5-31 22:32:23
+* @Description: 实时网络监控功能的核心实现
+ */
+
+package network
+
+import (
+        "context"
+        "fmt"
+        "net"
+        "os"
+        "runtime"
+        "sort"
+        "strconv"
+        "strings"
+        "sync"
+        "time"
+)
+
+// RealtimeNetworkMonitor 实时网络资源监控器
+type RealtimeNetworkMonitor struct {
+        ctx          context.Context
+        cancel       context.CancelFunc
+        mu           sync.RWMutex
+        isRunning    bool
+        updateChan   chan NetworkResourceSnapshot
+        errorChan    chan error
+        config       RealtimeMonitorConfig
+        lastSnapshot *NetworkResourceSnapshot
+        history      []NetworkResourceSnapshot
+        maxHistory   int
+        alertManager *AlertManager
+}
+
+// RealtimeMonitorConfig 实时监控配置
+type RealtimeMonitorConfig struct {
+        UpdateInterval   time.Duration   `json:"update_interval"`   // 更新间隔
+        Timeout          time.Duration   `json:"timeout"`           // 操作超时时间
+        MaxHistory       int             `json:"max_history"`       // 最大历史记录数
+        EnableAlerts     bool            `json:"enable_alerts"`     // 是否启用告警
+        AlertThresholds  AlertThresholds `json:"alert_thresholds"`  // 告警阈值
+        MonitoredTargets []string        `json:"monitored_targets"` // 监控目标
+        Interfaces       []string        `json:"interfaces"`        // 监控的网络接口
+}
+
+// AlertThresholds 告警阈值配置
+type AlertThresholds struct {
+        LatencyMs         float64 `json:"latency_ms"`          // 延迟阈值(毫秒)
+        PacketLossPercent float64 `json:"packet_loss_percent"` // 丢包率阈值(百分比)
+        BandwidthMbps     float64 `json:"bandwidth_mbps"`      // 带宽使用阈值(Mbps)
+        ConnectionCount   int     `json:"connection_count"`    // 连接数阈值
+        ErrorRate         float64 `json:"error_rate"`          // 错误率阈值(百分比)
+}
+
+// NetworkResourceSnapshot 网络资源快照
+type NetworkResourceSnapshot struct {
+        Timestamp        time.Time                 `json:"timestamp"`
+        Interfaces       map[string]InterfaceStats `json:"interfaces"`
+        Connections      ConnectionSummary         `json:"connections"`
+        TargetLatencies  map[string]LatencyStats   `json:"target_latencies"`
+        SystemResources  SystemNetworkResources    `json:"system_resources"`
+        Alerts           []Alert                   `json:"alerts"`
+        PerformanceScore float64                   `json:"performance_score"`
+}
+
+// InterfaceStats 网络接口统计信息
+type InterfaceStats struct {
+        Name             string    `json:"name"`
+        IsUp             bool      `json:"is_up"`
+        Speed            uint64    `json:"speed"` // 接口速度(bps)
+        MTU              int       `json:"mtu"`
+        BytesIn          uint64    `json:"bytes_in"`
+        BytesOut         uint64    `json:"bytes_out"`
+        PacketsIn        uint64    `json:"packets_in"`
+        PacketsOut       uint64    `json:"packets_out"`
+        ErrorsIn         uint64    `json:"errors_in"`
+        ErrorsOut        uint64    `json:"errors_out"`
+        DropsIn          uint64    `json:"drops_in"`
+        DropsOut         uint64    `json:"drops_out"`
+        BandwidthInMbps  float64   `json:"bandwidth_in_mbps"`
+        BandwidthOutMbps float64   `json:"bandwidth_out_mbps"`
+        Utilization      float64   `json:"utilization"` // 使用率(百分比)
+        LastUpdate       time.Time `json:"last_update"`
+}
+
+// ConnectionSummary 连接汇总信息
+type ConnectionSummary struct {
+        Total       int            `json:"total"`
+        TCP         int            `json:"tcp"`
+        UDP         int            `json:"udp"`
+        Established int            `json:"established"`
+        Listen      int            `json:"listen"`
+        TimeWait    int            `json:"time_wait"`
+        CloseWait   int            `json:"close_wait"`
+        ByState     map[string]int `json:"by_state"`
+        TopPorts    []PortUsage    `json:"top_ports"`
+}
+
+// PortUsage 端口使用情况
+type PortUsage struct {
+        Port        int    `json:"port"`
+        Protocol    string `json:"protocol"`
+        Connections int    `json:"connections"`
+        Service     string `json:"service,omitempty"`
+}
+
+// LatencyStats 延迟统计信息
+type LatencyStats struct {
+        Target      string        `json:"target"`
+        MinLatency  time.Duration `json:"min_latency"`
+        MaxLatency  time.Duration `json:"max_latency"`
+        AvgLatency  time.Duration `json:"avg_latency"`
+        PacketLoss  float64       `json:"packet_loss"`
+        Jitter      time.Duration `json:"jitter"`
+        IsReachable bool          `json:"is_reachable"`
+        LastCheck   time.Time     `json:"last_check"`
+}
+
+// SystemNetworkResources 系统网络资源信息
+type SystemNetworkResources struct {
+        OpenFiles       int     `json:"open_files"`
+        MaxOpenFiles    int     `json:"max_open_files"`
+        SocketBuffers   int     `json:"socket_buffers"`
+        NetworkThreads  int     `json:"network_threads"`
+        MemoryUsageMB   float64 `json:"memory_usage_mb"`
+        CPUUsagePercent float64 `json:"cpu_usage_percent"`
+}
+
+// Alert 告警信息
+type Alert struct {
+        ID           string    `json:"id"`
+        Type         string    `json:"type"`
+        Severity     string    `json:"severity"`
+        Message      string    `json:"message"`
+        Target       string    `json:"target,omitempty"`
+        Value        float64   `json:"value"`
+        Threshold    float64   `json:"threshold"`
+        Timestamp    time.Time `json:"timestamp"`
+        Acknowledged bool      `json:"acknowledged"`
+}
+
+// NewRealtimeNetworkMonitor 创建新的实时网络监控器
+func NewRealtimeNetworkMonitor(config RealtimeMonitorConfig) *RealtimeNetworkMonitor <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(context.Background())
+
+        // 设置默认值
+        if config.UpdateInterval == 0 </span><span class="cov0" title="0">{
+                config.UpdateInterval = 2 * time.Second
+        }</span>
+        <span class="cov8" title="1">if config.Timeout == 0 </span><span class="cov0" title="0">{
+                config.Timeout = 5 * time.Second
+        }</span>
+        <span class="cov8" title="1">if config.MaxHistory == 0 </span><span class="cov0" title="0">{
+                config.MaxHistory = 100
+        }</span>
+
+        <span class="cov8" title="1">monitor := &amp;RealtimeNetworkMonitor{
+                ctx:        ctx,
+                cancel:     cancel,
+                updateChan: make(chan NetworkResourceSnapshot, 10),
+                errorChan:  make(chan error, 10),
+                config:     config,
+                history:    make([]NetworkResourceSnapshot, 0, config.MaxHistory),
+                maxHistory: config.MaxHistory,
+        }
+
+        if config.EnableAlerts </span><span class="cov8" title="1">{
+                alertConfig := AlertConfig{
+                        Enabled:     true,
+                        Threshold:   config.AlertThresholds.LatencyMs,
+                        RepeatAfter: 5 * time.Minute,
+                }
+                monitor.alertManager = NewAlertManager(alertConfig)
+        }</span>
+
+        <span class="cov8" title="1">return monitor</span>
+}
+
+// Start 启动实时监控
+func (m *RealtimeNetworkMonitor) Start() error <span class="cov8" title="1">{
+        m.mu.Lock()
+        defer m.mu.Unlock()
+
+        if m.isRunning </span><span class="cov0" title="0">{
+                return fmt.Errorf("监控器已在运行中")
+        }</span>
+
+        <span class="cov8" title="1">m.isRunning = true
+
+        // 启动监控协程
+        go m.monitorLoop()
+
+        return nil</span>
+}
+
+// Stop 停止监控
+func (m *RealtimeNetworkMonitor) Stop() error <span class="cov8" title="1">{
+        m.mu.Lock()
+        defer m.mu.Unlock()
+
+        if !m.isRunning </span><span class="cov0" title="0">{
+                return fmt.Errorf("监控器未在运行")
+        }</span>
+
+        <span class="cov8" title="1">m.isRunning = false
+        m.cancel()
+
+        // 不显式关闭通道，让垃圾回收器处理
+        // 这避免了竞态条件，因为通道仍然可以接收数据，只是没有人会读取
+
+        return nil</span>
+}
+
+// GetUpdateChannel 获取更新通道
+func (m *RealtimeNetworkMonitor) GetUpdateChannel() &lt;-chan NetworkResourceSnapshot <span class="cov8" title="1">{
+        return m.updateChan
+}</span>
+
+// GetErrorChannel 获取错误通道
+func (m *RealtimeNetworkMonitor) GetErrorChannel() &lt;-chan error <span class="cov8" title="1">{
+        return m.errorChan
+}</span>
+
+// GetCurrentSnapshot 获取当前快照
+func (m *RealtimeNetworkMonitor) GetCurrentSnapshot() *NetworkResourceSnapshot <span class="cov8" title="1">{
+        m.mu.RLock()
+        defer m.mu.RUnlock()
+
+        if m.lastSnapshot == nil </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        // 返回副本以避免并发修改
+        <span class="cov8" title="1">snapshot := *m.lastSnapshot
+        return &amp;snapshot</span>
+}
+
+// GetHistory 获取历史记录
+func (m *RealtimeNetworkMonitor) GetHistory() []NetworkResourceSnapshot <span class="cov8" title="1">{
+        m.mu.RLock()
+        defer m.mu.RUnlock()
+
+        // 返回副本
+        history := make([]NetworkResourceSnapshot, len(m.history))
+        copy(history, m.history)
+        return history
+}</span>
+
+// IsRunning 检查是否正在运行
+func (m *RealtimeNetworkMonitor) IsRunning() bool <span class="cov8" title="1">{
+        m.mu.RLock()
+        defer m.mu.RUnlock()
+        return m.isRunning
+}</span>
+
+// monitorLoop 监控主循环
+func (m *RealtimeNetworkMonitor) monitorLoop() <span class="cov8" title="1">{
+        ticker := time.NewTicker(m.config.UpdateInterval)
+        defer ticker.Stop()
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-m.ctx.Done():<span class="cov8" title="1">
+                        return</span>
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        // 使用超时上下文防止死锁
+                        ctx, cancel := context.WithTimeout(m.ctx, m.config.Timeout)
+                        snapshot, err := m.collectSnapshot(ctx)
+                        cancel()
+
+                        if err != nil </span><span class="cov8" title="1">{
+                                select </span>{
+                                case m.errorChan &lt;- err:<span class="cov8" title="1"></span>
+                                case &lt;-m.ctx.Done():<span class="cov8" title="1">
+                                        return</span>
+                                default:<span class="cov0" title="0"></span>
+                                        // 错误通道满了，丢弃错误
+                                }
+                                <span class="cov8" title="1">continue</span>
+                        }
+
+                        // 更新历史记录
+                        <span class="cov8" title="1">m.updateHistory(snapshot)
+
+                        // 发送更新
+                        select </span>{
+                        case m.updateChan &lt;- snapshot:<span class="cov8" title="1"></span>
+                        case &lt;-m.ctx.Done():<span class="cov0" title="0">
+                                return</span>
+                        default:<span class="cov8" title="1"></span>
+                                // 更新通道满了，丢弃旧数据
+                        }
+                }
+        }
+}
+
+// collectSnapshot 收集网络资源快照
+func (m *RealtimeNetworkMonitor) collectSnapshot(ctx context.Context) (NetworkResourceSnapshot, error) <span class="cov8" title="1">{
+        snapshot := NetworkResourceSnapshot{
+                Timestamp:       time.Now(),
+                Interfaces:      make(map[string]InterfaceStats),
+                TargetLatencies: make(map[string]LatencyStats),
+                Alerts:          make([]Alert, 0),
+        }
+
+        // 使用独立的容器来收集各种数据，避免并发访问问题
+        type dataContainer struct {
+                mu               sync.Mutex
+                interfaces       map[string]InterfaceStats
+                connections      ConnectionSummary
+                targetLatencies  map[string]LatencyStats
+                systemResources  SystemNetworkResources
+                interfacesReady  bool
+                connectionsReady bool
+                latenciesReady   bool
+                resourcesReady   bool
+        }
+
+        container := &amp;dataContainer{
+                interfaces:      make(map[string]InterfaceStats),
+                targetLatencies: make(map[string]LatencyStats),
+        }
+
+        var wg sync.WaitGroup
+        var errorMu sync.Mutex
+        errors := make([]error, 0)
+
+        // 并发收集各种数据，使用超时防止死锁
+
+        // 收集接口统计信息
+        wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                interfaces, err := m.collectInterfaceStats(ctx)
+                if err != nil </span><span class="cov8" title="1">{
+                        errorMu.Lock()
+                        errors = append(errors, fmt.Errorf("收集接口统计失败: %w", err))
+                        errorMu.Unlock()
+                        return
+                }</span>
+                <span class="cov8" title="1">container.mu.Lock()
+                container.interfaces = interfaces
+                container.interfacesReady = true
+                container.mu.Unlock()</span>
+        }()
+
+        // 收集连接信息
+        <span class="cov8" title="1">wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                connections, err := m.collectConnectionStats(ctx)
+                if err != nil </span><span class="cov8" title="1">{
+                        errorMu.Lock()
+                        errors = append(errors, fmt.Errorf("收集连接统计失败: %w", err))
+                        errorMu.Unlock()
+                        return
+                }</span>
+                <span class="cov8" title="1">container.mu.Lock()
+                container.connections = connections
+                container.connectionsReady = true
+                container.mu.Unlock()</span>
+        }()
+
+        // 收集目标延迟信息
+        <span class="cov8" title="1">if len(m.config.MonitoredTargets) &gt; 0 </span><span class="cov8" title="1">{
+                wg.Add(1)
+                go func() </span><span class="cov8" title="1">{
+                        defer wg.Done()
+                        latencies, err := m.collectTargetLatencies(ctx)
+                        if err != nil </span><span class="cov8" title="1">{
+                                errorMu.Lock()
+                                errors = append(errors, fmt.Errorf("收集延迟统计失败: %w", err))
+                                errorMu.Unlock()
+                                return
+                        }</span>
+                        <span class="cov8" title="1">container.mu.Lock()
+                        container.targetLatencies = latencies
+                        container.latenciesReady = true
+                        container.mu.Unlock()</span>
+                }()
+        }
+
+        // 收集系统资源信息
+        <span class="cov8" title="1">wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                resources, err := m.collectSystemResources(ctx)
+                if err != nil </span><span class="cov8" title="1">{
+                        errorMu.Lock()
+                        errors = append(errors, fmt.Errorf("收集系统资源失败: %w", err))
+                        errorMu.Unlock()
+                        return
+                }</span>
+                <span class="cov8" title="1">container.mu.Lock()
+                container.systemResources = resources
+                container.resourcesReady = true
+                container.mu.Unlock()</span>
+        }()
+
+        // 等待所有收集任务完成或超时
+        <span class="cov8" title="1">done := make(chan struct{})
+        go func() </span><span class="cov8" title="1">{
+                wg.Wait()
+                close(done)
+        }</span>()
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1">
+                // 所有任务完成，安全地复制数据到结果中
+                container.mu.Lock()
+                if container.interfacesReady </span><span class="cov8" title="1">{
+                        snapshot.Interfaces = container.interfaces
+                }</span>
+                <span class="cov8" title="1">if container.connectionsReady </span><span class="cov8" title="1">{
+                        snapshot.Connections = container.connections
+                }</span>
+                <span class="cov8" title="1">if container.latenciesReady </span><span class="cov8" title="1">{
+                        snapshot.TargetLatencies = container.targetLatencies
+                }</span>
+                <span class="cov8" title="1">if container.resourcesReady </span><span class="cov8" title="1">{
+                        snapshot.SystemResources = container.systemResources
+                }</span>
+                <span class="cov8" title="1">container.mu.Unlock()</span>
+        case &lt;-ctx.Done():<span class="cov8" title="1">
+                return snapshot, fmt.Errorf("数据收集超时")</span>
+        }
+
+        // 检查是否有错误
+        <span class="cov8" title="1">if len(errors) &gt; 0 </span><span class="cov0" title="0">{
+                return snapshot, fmt.Errorf("部分数据收集失败: %v", errors)
+        }</span>
+
+        // 计算性能评分
+        <span class="cov8" title="1">snapshot.PerformanceScore = m.calculatePerformanceScore(snapshot)
+
+        // 检查告警
+        if m.config.EnableAlerts </span><span class="cov8" title="1">{
+                snapshot.Alerts = m.checkAlerts(snapshot)
+        }</span>
+
+        <span class="cov8" title="1">return snapshot, nil</span>
+}
+
+// collectInterfaceStats 收集网络接口统计信息
+func (m *RealtimeNetworkMonitor) collectInterfaceStats(ctx context.Context) (map[string]InterfaceStats, error) <span class="cov8" title="1">{
+        interfaces := make(map[string]InterfaceStats)
+
+        netInterfaces, err := net.Interfaces()
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">for _, iface := range netInterfaces </span><span class="cov8" title="1">{
+                // 检查上下文是否已取消
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov8" title="1">
+                        return nil, ctx.Err()</span>
+                default:<span class="cov8" title="1"></span>
+                }
+
+                // 如果配置了特定接口，只监控这些接口
+                <span class="cov8" title="1">if len(m.config.Interfaces) &gt; 0 </span><span class="cov0" title="0">{
+                        found := false
+                        for _, configIface := range m.config.Interfaces </span><span class="cov0" title="0">{
+                                if iface.Name == configIface </span><span class="cov0" title="0">{
+                                        found = true
+                                        break</span>
+                                }
+                        }
+                        <span class="cov0" title="0">if !found </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                }
+
+                <span class="cov8" title="1">stats := InterfaceStats{
+                        Name:       iface.Name,
+                        IsUp:       iface.Flags&amp;net.FlagUp != 0,
+                        MTU:        iface.MTU,
+                        LastUpdate: time.Now(),
+                }
+
+                // 获取流量统计（Linux特定实现）
+                if runtime.GOOS == "linux" </span><span class="cov8" title="1">{
+                        if err := m.getLinuxInterfaceStats(&amp;stats); err != nil </span><span class="cov0" title="0">{
+                                // 记录错误但继续处理其他接口
+                                continue</span>
+                        }
+                }
+
+                // 计算带宽使用率
+                <span class="cov8" title="1">m.mu.RLock()
+                lastSnapshot := m.lastSnapshot
+                m.mu.RUnlock()
+
+                if lastSnapshot != nil </span><span class="cov8" title="1">{
+                        if lastStats, exists := lastSnapshot.Interfaces[iface.Name]; exists </span><span class="cov8" title="1">{
+                                timeDiff := stats.LastUpdate.Sub(lastStats.LastUpdate).Seconds()
+                                if timeDiff &gt; 0 </span><span class="cov8" title="1">{
+                                        bytesDiffIn := float64(stats.BytesIn - lastStats.BytesIn)
+                                        bytesDiffOut := float64(stats.BytesOut - lastStats.BytesOut)
+
+                                        stats.BandwidthInMbps = (bytesDiffIn * 8) / (timeDiff * 1024 * 1024)
+                                        stats.BandwidthOutMbps = (bytesDiffOut * 8) / (timeDiff * 1024 * 1024)
+
+                                        // 计算使用率（假设千兆网卡）
+                                        if stats.Speed &gt; 0 </span><span class="cov0" title="0">{
+                                                totalBandwidth := stats.BandwidthInMbps + stats.BandwidthOutMbps
+                                                maxBandwidth := float64(stats.Speed) / (1024 * 1024)
+                                                stats.Utilization = (totalBandwidth / maxBandwidth) * 100
+                                        }</span>
+                                }
+                        }
+                }
+
+                <span class="cov8" title="1">interfaces[iface.Name] = stats</span>
+        }
+
+        <span class="cov8" title="1">return interfaces, nil</span>
+}
+
+// getLinuxInterfaceStats 获取Linux系统的接口统计信息
+func (m *RealtimeNetworkMonitor) getLinuxInterfaceStats(stats *InterfaceStats) error <span class="cov8" title="1">{
+        // 读取 /proc/net/dev 文件
+        data, err := os.ReadFile("/proc/net/dev")
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">lines := strings.Split(string(data), "\n")
+        for _, line := range lines </span><span class="cov8" title="1">{
+                if strings.Contains(line, stats.Name+":") </span><span class="cov8" title="1">{
+                        fields := strings.Fields(line)
+                        if len(fields) &gt;= 17 </span><span class="cov8" title="1">{
+                                // 解析统计数据
+                                if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.BytesIn = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.ParseUint(fields[2], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.PacketsIn = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.ParseUint(fields[3], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.ErrorsIn = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.ParseUint(fields[4], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.DropsIn = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.ParseUint(fields[9], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.BytesOut = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.ParseUint(fields[10], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.PacketsOut = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.ParseUint(fields[11], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.ErrorsOut = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.ParseUint(fields[12], 10, 64); err == nil </span><span class="cov8" title="1">{
+                                        stats.DropsOut = val
+                                }</span>
+                        }
+                        <span class="cov8" title="1">break</span>
+                }
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// collectConnectionStats 收集连接统计信息
+func (m *RealtimeNetworkMonitor) collectConnectionStats(ctx context.Context) (ConnectionSummary, error) <span class="cov8" title="1">{
+        summary := ConnectionSummary{
+                ByState:  make(map[string]int),
+                TopPorts: make([]PortUsage, 0),
+        }
+
+        // 检查上下文
+        select </span>{
+        case &lt;-ctx.Done():<span class="cov8" title="1">
+                return summary, ctx.Err()</span>
+        default:<span class="cov8" title="1"></span>
+        }
+
+        // 获取TCP连接
+        <span class="cov8" title="1">if err := m.getTCPConnections(&amp;summary); err != nil </span><span class="cov0" title="0">{
+                return summary, err
+        }</span>
+
+        // 获取UDP连接
+        <span class="cov8" title="1">if err := m.getUDPConnections(&amp;summary); err != nil </span><span class="cov0" title="0">{
+                return summary, err
+        }</span>
+
+        // 计算总数
+        <span class="cov8" title="1">summary.Total = summary.TCP + summary.UDP
+
+        return summary, nil</span>
+}
+
+// getTCPConnections 获取TCP连接信息
+func (m *RealtimeNetworkMonitor) getTCPConnections(summary *ConnectionSummary) error <span class="cov8" title="1">{
+        if runtime.GOOS != "linux" </span><span class="cov0" title="0">{
+                return nil // 暂时只支持Linux
+        }</span>
+
+        <span class="cov8" title="1">data, err := os.ReadFile("/proc/net/tcp")
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">lines := strings.Split(string(data), "\n")
+        portCount := make(map[int]int)
+
+        for i, line := range lines </span><span class="cov8" title="1">{
+                if i == 0 || line == "" </span><span class="cov8" title="1">{
+                        continue</span> // 跳过标题行和空行
+                }
+
+                <span class="cov8" title="1">fields := strings.Fields(line)
+                if len(fields) &lt; 4 </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // 解析状态
+                <span class="cov8" title="1">state := fields[3]
+                switch state </span>{
+                case "01":<span class="cov8" title="1">
+                        summary.Established++
+                        summary.ByState["ESTABLISHED"]++</span>
+                case "0A":<span class="cov8" title="1">
+                        summary.Listen++
+                        summary.ByState["LISTEN"]++</span>
+                case "06":<span class="cov8" title="1">
+                        summary.TimeWait++
+                        summary.ByState["TIME_WAIT"]++</span>
+                case "08":<span class="cov8" title="1">
+                        summary.CloseWait++
+                        summary.ByState["CLOSE_WAIT"]++</span>
+                }
+
+                // 解析本地端口
+                <span class="cov8" title="1">localAddr := fields[1]
+                if colonIndex := strings.LastIndex(localAddr, ":"); colonIndex != -1 </span><span class="cov8" title="1">{
+                        portHex := localAddr[colonIndex+1:]
+                        if port, err := strconv.ParseInt(portHex, 16, 32); err == nil </span><span class="cov8" title="1">{
+                                portCount[int(port)]++
+                        }</span>
+                }
+
+                <span class="cov8" title="1">summary.TCP++</span>
+        }
+
+        // 生成端口使用排行
+        <span class="cov8" title="1">summary.TopPorts = m.generateTopPorts(portCount, "tcp")
+
+        return nil</span>
+}
+
+// getUDPConnections 获取UDP连接信息
+func (m *RealtimeNetworkMonitor) getUDPConnections(summary *ConnectionSummary) error <span class="cov8" title="1">{
+        if runtime.GOOS != "linux" </span><span class="cov0" title="0">{
+                return nil // 暂时只支持Linux
+        }</span>
+
+        <span class="cov8" title="1">data, err := os.ReadFile("/proc/net/udp")
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">lines := strings.Split(string(data), "\n")
+        for i, line := range lines </span><span class="cov8" title="1">{
+                if i == 0 || line == "" </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">fields := strings.Fields(line)
+                if len(fields) &gt;= 4 </span><span class="cov8" title="1">{
+                        summary.UDP++
+                }</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// generateTopPorts 生成端口使用排行
+func (m *RealtimeNetworkMonitor) generateTopPorts(portCount map[int]int, protocol string) []PortUsage <span class="cov8" title="1">{
+        type portStat struct {
+                port  int
+                count int
+        }
+
+        stats := make([]portStat, 0, len(portCount))
+        for port, count := range portCount </span><span class="cov8" title="1">{
+                stats = append(stats, portStat{port: port, count: count})
+        }</span>
+
+        // 按连接数排序
+        <span class="cov8" title="1">sort.Slice(stats, func(i, j int) bool </span><span class="cov8" title="1">{
+                return stats[i].count &gt; stats[j].count
+        }</span>)
+
+        // 取前10个
+        <span class="cov8" title="1">topPorts := make([]PortUsage, 0, 10)
+        for i, stat := range stats </span><span class="cov8" title="1">{
+                if i &gt;= 10 </span><span class="cov8" title="1">{
+                        break</span>
+                }
+
+                <span class="cov8" title="1">usage := PortUsage{
+                        Port:        stat.port,
+                        Protocol:    protocol,
+                        Connections: stat.count,
+                        Service:     m.getServiceName(stat.port),
+                }
+                topPorts = append(topPorts, usage)</span>
+        }
+
+        <span class="cov8" title="1">return topPorts</span>
+}
+
+// getServiceName 根据端口号获取服务名称
+func (m *RealtimeNetworkMonitor) getServiceName(port int) string <span class="cov8" title="1">{
+        wellKnownPorts := map[int]string{
+                22:   "SSH",
+                23:   "Telnet",
+                25:   "SMTP",
+                53:   "DNS",
+                80:   "HTTP",
+                110:  "POP3",
+                143:  "IMAP",
+                443:  "HTTPS",
+                993:  "IMAPS",
+                995:  "POP3S",
+                3306: "MySQL",
+                5432: "PostgreSQL",
+                6379: "Redis",
+                8080: "HTTP-Alt",
+                9200: "Elasticsearch",
+        }
+
+        if service, exists := wellKnownPorts[port]; exists </span><span class="cov8" title="1">{
+                return service
+        }</span>
+        <span class="cov8" title="1">return ""</span>
+}
+
+// collectTargetLatencies 收集目标延迟信息
+func (m *RealtimeNetworkMonitor) collectTargetLatencies(ctx context.Context) (map[string]LatencyStats, error) <span class="cov8" title="1">{
+        latencies := make(map[string]LatencyStats)
+
+        for _, target := range m.config.MonitoredTargets </span><span class="cov8" title="1">{
+                // 检查上下文
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov8" title="1">
+                        return nil, ctx.Err()</span>
+                default:<span class="cov8" title="1"></span>
+                }
+
+                // 使用超时上下文进行ping测试
+                <span class="cov8" title="1">pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+                result, err := m.pingWithContext(pingCtx, target)
+                cancel()
+
+                stats := LatencyStats{
+                        Target:    target,
+                        LastCheck: time.Now(),
+                }
+
+                if err != nil </span><span class="cov8" title="1">{
+                        stats.IsReachable = false
+                }</span> else<span class="cov0" title="0"> {
+                        stats.IsReachable = true
+                        stats.MinLatency = result.MinRtt
+                        stats.MaxLatency = result.MaxRtt
+                        stats.AvgLatency = result.AvgRtt
+                        stats.PacketLoss = result.PacketLoss
+                        stats.Jitter = result.StdDevRtt
+                }</span>
+
+                <span class="cov8" title="1">latencies[target] = stats</span>
+        }
+
+        <span class="cov8" title="1">return latencies, nil</span>
+}
+
+// pingWithContext 带上下文的ping测试
+func (m *RealtimeNetworkMonitor) pingWithContext(ctx context.Context, target string) (*PingResult, error) <span class="cov8" title="1">{
+        // 使用现有的Ping函数，但添加上下文支持
+        done := make(chan struct{})
+        var result *PingResult
+        var err error
+
+        go func() </span><span class="cov8" title="1">{
+                defer close(done)
+                result, err = Ping(target, 3, 2*time.Second)
+        }</span>()
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1">
+                return result, err</span>
+        case &lt;-ctx.Done():<span class="cov8" title="1">
+                return nil, ctx.Err()</span>
+        }
+}
+
+// collectSystemResources 收集系统网络资源信息
+func (m *RealtimeNetworkMonitor) collectSystemResources(ctx context.Context) (SystemNetworkResources, error) <span class="cov8" title="1">{
+        resources := SystemNetworkResources{}
+
+        // 检查上下文
+        select </span>{
+        case &lt;-ctx.Done():<span class="cov8" title="1">
+                return resources, ctx.Err()</span>
+        default:<span class="cov8" title="1"></span>
+        }
+
+        // 获取打开文件数（Linux特定）
+        <span class="cov8" title="1">if runtime.GOOS == "linux" </span><span class="cov8" title="1">{
+                if data, err := os.ReadFile("/proc/sys/fs/file-nr"); err == nil </span><span class="cov8" title="1">{
+                        fields := strings.Fields(string(data))
+                        if len(fields) &gt;= 3 </span><span class="cov8" title="1">{
+                                if val, err := strconv.Atoi(fields[0]); err == nil </span><span class="cov8" title="1">{
+                                        resources.OpenFiles = val
+                                }</span>
+                                <span class="cov8" title="1">if val, err := strconv.Atoi(fields[2]); err == nil </span><span class="cov8" title="1">{
+                                        resources.MaxOpenFiles = val
+                                }</span>
+                        }
+                }
+
+                // 获取网络相关的线程数
+                <span class="cov8" title="1">resources.NetworkThreads = runtime.NumGoroutine()</span>
+        }
+
+        // 获取内存使用情况
+        <span class="cov8" title="1">var memStats runtime.MemStats
+        runtime.ReadMemStats(&amp;memStats)
+        resources.MemoryUsageMB = float64(memStats.Alloc) / 1024 / 1024
+
+        return resources, nil</span>
+}
+
+// calculatePerformanceScore 计算性能评分
+func (m *RealtimeNetworkMonitor) calculatePerformanceScore(snapshot NetworkResourceSnapshot) float64 <span class="cov8" title="1">{
+        score := 100.0
+
+        // 基于延迟评分
+        for _, latency := range snapshot.TargetLatencies </span><span class="cov8" title="1">{
+                if latency.IsReachable </span><span class="cov0" title="0">{
+                        latencyMs := float64(latency.AvgLatency.Nanoseconds()) / 1e6
+                        if latencyMs &gt; 100 </span><span class="cov0" title="0">{
+                                score -= 10
+                        }</span> else<span class="cov0" title="0"> if latencyMs &gt; 50 </span><span class="cov0" title="0">{
+                                score -= 5
+                        }</span>
+
+                        // 基于丢包率评分
+                        <span class="cov0" title="0">if latency.PacketLoss &gt; 5 </span><span class="cov0" title="0">{
+                                score -= 20
+                        }</span> else<span class="cov0" title="0"> if latency.PacketLoss &gt; 1 </span><span class="cov0" title="0">{
+                                score -= 10
+                        }</span>
+                } else<span class="cov8" title="1"> {
+                        score -= 30 // 不可达扣分更多
+                }</span>
+        }
+
+        // 基于接口错误率评分
+        <span class="cov8" title="1">for _, iface := range snapshot.Interfaces </span><span class="cov8" title="1">{
+                if iface.IsUp </span><span class="cov8" title="1">{
+                        totalPackets := iface.PacketsIn + iface.PacketsOut
+                        totalErrors := iface.ErrorsIn + iface.ErrorsOut
+                        if totalPackets &gt; 0 </span><span class="cov8" title="1">{
+                                errorRate := float64(totalErrors) / float64(totalPackets) * 100
+                                if errorRate &gt; 1 </span><span class="cov0" title="0">{
+                                        score -= 15
+                                }</span> else<span class="cov8" title="1"> if errorRate &gt; 0.1 </span><span class="cov0" title="0">{
+                                        score -= 5
+                                }</span>
+                        }
+                }
+        }
+
+        // 基于连接数评分
+        <span class="cov8" title="1">if snapshot.Connections.Total &gt; 10000 </span><span class="cov0" title="0">{
+                score -= 10
+        }</span> else<span class="cov8" title="1"> if snapshot.Connections.Total &gt; 5000 </span><span class="cov0" title="0">{
+                score -= 5
+        }</span>
+
+        <span class="cov8" title="1">if score &lt; 0 </span><span class="cov0" title="0">{
+                score = 0
+        }</span>
+
+        <span class="cov8" title="1">return score</span>
+}
+
+// checkAlerts 检查告警条件
+func (m *RealtimeNetworkMonitor) checkAlerts(snapshot NetworkResourceSnapshot) []Alert <span class="cov8" title="1">{
+        alerts := make([]Alert, 0)
+
+        // 检查延迟告警
+        for target, latency := range snapshot.TargetLatencies </span><span class="cov8" title="1">{
+                if latency.IsReachable </span><span class="cov0" title="0">{
+                        latencyMs := float64(latency.AvgLatency.Nanoseconds()) / 1e6
+                        if latencyMs &gt; m.config.AlertThresholds.LatencyMs </span><span class="cov0" title="0">{
+                                alert := Alert{
+                                        ID:        fmt.Sprintf("latency_%s_%d", target, time.Now().Unix()),
+                                        Type:      "latency",
+                                        Severity:  "warning",
+                                        Message:   fmt.Sprintf("目标 %s 延迟过高: %.2fms", target, latencyMs),
+                                        Target:    target,
+                                        Value:     latencyMs,
+                                        Threshold: m.config.AlertThresholds.LatencyMs,
+                                        Timestamp: time.Now(),
+                                }
+                                alerts = append(alerts, alert)
+                        }</span>
+
+                        // 检查丢包告警
+                        <span class="cov0" title="0">if latency.PacketLoss &gt; m.config.AlertThresholds.PacketLossPercent </span><span class="cov0" title="0">{
+                                alert := Alert{
+                                        ID:        fmt.Sprintf("packetloss_%s_%d", target, time.Now().Unix()),
+                                        Type:      "packet_loss",
+                                        Severity:  "critical",
+                                        Message:   fmt.Sprintf("目标 %s 丢包率过高: %.2f%%", target, latency.PacketLoss),
+                                        Target:    target,
+                                        Value:     latency.PacketLoss,
+                                        Threshold: m.config.AlertThresholds.PacketLossPercent,
+                                        Timestamp: time.Now(),
+                                }
+                                alerts = append(alerts, alert)
+                        }</span>
+                }
+        }
+
+        // 检查带宽使用告警
+        <span class="cov8" title="1">for ifaceName, iface := range snapshot.Interfaces </span><span class="cov8" title="1">{
+                totalBandwidth := iface.BandwidthInMbps + iface.BandwidthOutMbps
+                if totalBandwidth &gt; m.config.AlertThresholds.BandwidthMbps </span><span class="cov0" title="0">{
+                        alert := Alert{
+                                ID:        fmt.Sprintf("bandwidth_%s_%d", ifaceName, time.Now().Unix()),
+                                Type:      "bandwidth",
+                                Severity:  "warning",
+                                Message:   fmt.Sprintf("接口 %s 带宽使用过高: %.2f Mbps", ifaceName, totalBandwidth),
+                                Target:    ifaceName,
+                                Value:     totalBandwidth,
+                                Threshold: m.config.AlertThresholds.BandwidthMbps,
+                                Timestamp: time.Now(),
+                        }
+                        alerts = append(alerts, alert)
+                }</span>
+        }
+
+        // 检查连接数告警
+        <span class="cov8" title="1">if snapshot.Connections.Total &gt; m.config.AlertThresholds.ConnectionCount </span><span class="cov0" title="0">{
+                alert := Alert{
+                        ID:        fmt.Sprintf("connections_%d", time.Now().Unix()),
+                        Type:      "connections",
+                        Severity:  "warning",
+                        Message:   fmt.Sprintf("连接数过多: %d", snapshot.Connections.Total),
+                        Value:     float64(snapshot.Connections.Total),
+                        Threshold: float64(m.config.AlertThresholds.ConnectionCount),
+                        Timestamp: time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        <span class="cov8" title="1">return alerts</span>
+}
+
+// updateHistory 更新历史记录
+func (m *RealtimeNetworkMonitor) updateHistory(snapshot NetworkResourceSnapshot) <span class="cov8" title="1">{
+        m.mu.Lock()
+        defer m.mu.Unlock()
+
+        // 更新当前快照
+        m.lastSnapshot = &amp;snapshot
+
+        // 添加到历史记录
+        m.history = append(m.history, snapshot)
+
+        // 保持历史记录在限制范围内
+        if len(m.history) &gt; m.maxHistory </span><span class="cov8" title="1">{
+                m.history = m.history[len(m.history)-m.maxHistory:]
+        }</span>
+}
+
+// GetStatistics 获取统计信息
+func (m *RealtimeNetworkMonitor) GetStatistics() map[string]interface{} <span class="cov8" title="1">{
+        m.mu.RLock()
+        defer m.mu.RUnlock()
+
+        stats := make(map[string]interface{})
+
+        if len(m.history) == 0 </span><span class="cov0" title="0">{
+                return stats
+        }</span>
+
+        // 计算平均性能评分
+        <span class="cov8" title="1">totalScore := 0.0
+        for _, snapshot := range m.history </span><span class="cov8" title="1">{
+                totalScore += snapshot.PerformanceScore
+        }</span>
+        <span class="cov8" title="1">stats["average_performance_score"] = totalScore / float64(len(m.history))
+
+        // 计算告警统计
+        alertCounts := make(map[string]int)
+        for _, snapshot := range m.history </span><span class="cov8" title="1">{
+                for _, alert := range snapshot.Alerts </span><span class="cov0" title="0">{
+                        alertCounts[alert.Type]++
+                }</span>
+        }
+        <span class="cov8" title="1">stats["alert_counts"] = alertCounts
+
+        // 历史记录数量
+        stats["history_count"] = len(m.history)
+        stats["is_running"] = m.isRunning
+
+        return stats</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 实时网络监控用户界面的实现
+ */
+
+package network
+
+import (
+        "fmt"
+        "sort"
+        "strconv"
+        "strings"
+        "time"
+
+        "github.com/gdamore/tcell/v2"
+        "github.com/rivo/tview"
+)
+
+// RealtimeNetworkUI 实时网络监控UI
+type RealtimeNetworkUI struct {
+        app              *tview.Application
+        monitor          *RealtimeNetworkMonitor
+        mainFlex         *tview.Flex
+        interfaceTable   *tview.Table
+        connectionTable  *tview.Table
+        latencyTable     *tview.Table
+        alertList        *tview.List
+        statusBar        *tview.TextView
+        performanceGauge *tview.TextView
+        systemInfo       *tview.TextView
+        isRunning        bool
+        updateTicker     *time.Ticker
+}
+
+// NewRealtimeNetworkUI 创建新的实时网络监控UI
+func NewRealtimeNetworkUI(monitor *RealtimeNetworkMonitor) *RealtimeNetworkUI <span class="cov0" title="0">{
+        ui := &amp;RealtimeNetworkUI{
+                app:     tview.NewApplication(),
+                monitor: monitor,
+        }
+
+        ui.setupUI()
+        ui.setupKeyBindings()
+
+        return ui
+}</span>
+
+// setupUI 设置UI布局
+func (ui *RealtimeNetworkUI) setupUI() <span class="cov0" title="0">{
+        // 创建各个组件
+        ui.createInterfaceTable()
+        ui.createConnectionTable()
+        ui.createLatencyTable()
+        ui.createAlertList()
+        ui.createStatusBar()
+        ui.createPerformanceGauge()
+        ui.createSystemInfo()
+
+        // 创建主布局
+        ui.createMainLayout()
+}</span>
+
+// createInterfaceTable 创建网络接口表格
+func (ui *RealtimeNetworkUI) createInterfaceTable() <span class="cov0" title="0">{
+        ui.interfaceTable = tview.NewTable()
+        ui.interfaceTable.SetBorders(true).
+                SetTitle(" 网络接口统计 ").
+                SetTitleAlign(tview.AlignLeft)
+
+        // 设置表头
+        headers := []string{"接口", "状态", "MTU", "接收(MB)", "发送(MB)", "带宽入(Mbps)", "带宽出(Mbps)", "使用率%", "错误"}
+        for i, header := range headers </span><span class="cov0" title="0">{
+                ui.interfaceTable.SetCell(0, i, tview.NewTableCell(header).
+                        SetTextColor(tcell.ColorYellow).
+                        SetAlign(tview.AlignCenter).
+                        SetSelectable(false))
+        }</span>
+
+        <span class="cov0" title="0">ui.interfaceTable.SetFixed(1, 0)</span>
+}
+
+// createConnectionTable 创建连接统计表格
+func (ui *RealtimeNetworkUI) createConnectionTable() <span class="cov0" title="0">{
+        ui.connectionTable = tview.NewTable()
+        ui.connectionTable.SetBorders(true).
+                SetTitle(" 连接统计 ").
+                SetTitleAlign(tview.AlignLeft)
+
+        // 设置表头
+        headers := []string{"协议", "总数", "已建立", "监听", "等待", "关闭等待"}
+        for i, header := range headers </span><span class="cov0" title="0">{
+                ui.connectionTable.SetCell(0, i, tview.NewTableCell(header).
+                        SetTextColor(tcell.ColorYellow).
+                        SetAlign(tview.AlignCenter).
+                        SetSelectable(false))
+        }</span>
+
+        <span class="cov0" title="0">ui.connectionTable.SetFixed(1, 0)</span>
+}
+
+// createLatencyTable 创建延迟统计表格
+func (ui *RealtimeNetworkUI) createLatencyTable() <span class="cov0" title="0">{
+        ui.latencyTable = tview.NewTable()
+        ui.latencyTable.SetBorders(true).
+                SetTitle(" 目标延迟统计 ").
+                SetTitleAlign(tview.AlignLeft)
+
+        // 设置表头
+        headers := []string{"目标", "状态", "平均延迟", "最小延迟", "最大延迟", "丢包率%", "抖动"}
+        for i, header := range headers </span><span class="cov0" title="0">{
+                ui.latencyTable.SetCell(0, i, tview.NewTableCell(header).
+                        SetTextColor(tcell.ColorYellow).
+                        SetAlign(tview.AlignCenter).
+                        SetSelectable(false))
+        }</span>
+
+        <span class="cov0" title="0">ui.latencyTable.SetFixed(1, 0)</span>
+}
+
+// createAlertList 创建告警列表
+func (ui *RealtimeNetworkUI) createAlertList() <span class="cov0" title="0">{
+        ui.alertList = tview.NewList()
+        ui.alertList.SetTitle(" 实时告警 ").
+                SetTitleAlign(tview.AlignLeft).
+                SetBorder(true)
+
+        ui.alertList.SetSelectedFunc(func(index int, mainText, secondaryText string, shortcut rune) </span><span class="cov0" title="0">{
+                // 处理告警确认
+                ui.acknowledgeAlert(index)
+        }</span>)
+}
+
+// createStatusBar 创建状态栏
+func (ui *RealtimeNetworkUI) createStatusBar() <span class="cov0" title="0">{
+        ui.statusBar = tview.NewTextView().
+                SetDynamicColors(true).
+                SetWrap(false).
+                SetText("[green]实时网络监控 - 按 'q' 退出, 'r' 重启监控, 'p' 暂停/恢复[white]")
+}</span>
+
+// createPerformanceGauge 创建性能指示器
+func (ui *RealtimeNetworkUI) createPerformanceGauge() <span class="cov0" title="0">{
+        ui.performanceGauge = tview.NewTextView()
+        ui.performanceGauge.SetTitle(" 网络性能评分 ").
+                SetTitleAlign(tview.AlignLeft).
+                SetBorder(true)
+        ui.performanceGauge.SetDynamicColors(true)
+}</span>
+
+// createSystemInfo 创建系统信息面板
+func (ui *RealtimeNetworkUI) createSystemInfo() <span class="cov0" title="0">{
+        ui.systemInfo = tview.NewTextView()
+        ui.systemInfo.SetTitle(" 系统资源 ").
+                SetTitleAlign(tview.AlignLeft).
+                SetBorder(true)
+        ui.systemInfo.SetDynamicColors(true)
+}</span>
+
+// createMainLayout 创建主布局
+func (ui *RealtimeNetworkUI) createMainLayout() <span class="cov0" title="0">{
+        // 顶部信息面板
+        topFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
+                AddItem(ui.performanceGauge, 0, 1, false).
+                AddItem(ui.systemInfo, 0, 1, false)
+
+        // 中间表格区域
+        middleFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
+                AddItem(ui.interfaceTable, 0, 2, true).
+                AddItem(ui.connectionTable, 0, 1, false)
+
+        // 底部区域
+        bottomFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
+                AddItem(ui.latencyTable, 0, 2, false).
+                AddItem(ui.alertList, 0, 1, false)
+
+        // 主布局
+        ui.mainFlex = tview.NewFlex().SetDirection(tview.FlexRow).
+                AddItem(topFlex, 8, 0, false).
+                AddItem(middleFlex, 0, 2, true).
+                AddItem(bottomFlex, 0, 1, false).
+                AddItem(ui.statusBar, 1, 0, false)
+
+        ui.app.SetRoot(ui.mainFlex, true)
+}</span>
+
+// setupKeyBindings 设置键盘绑定
+func (ui *RealtimeNetworkUI) setupKeyBindings() <span class="cov0" title="0">{
+        ui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey </span><span class="cov0" title="0">{
+                switch event.Rune() </span>{
+                case 'q', 'Q':<span class="cov0" title="0">
+                        ui.Stop()
+                        return nil</span>
+                case 'r', 'R':<span class="cov0" title="0">
+                        ui.restartMonitoring()
+                        return nil</span>
+                case 'p', 'P':<span class="cov0" title="0">
+                        ui.togglePause()
+                        return nil</span>
+                case 'c', 'C':<span class="cov0" title="0">
+                        ui.clearAlerts()
+                        return nil</span>
+                }
+
+                <span class="cov0" title="0">switch event.Key() </span>{
+                case tcell.KeyEscape:<span class="cov0" title="0">
+                        ui.Stop()
+                        return nil</span>
+                case tcell.KeyTab:<span class="cov0" title="0">
+                        ui.switchFocus()
+                        return nil</span>
+                }
+
+                <span class="cov0" title="0">return event</span>
+        })
+}
+
+// Start 启动UI
+func (ui *RealtimeNetworkUI) Start() error <span class="cov0" title="0">{
+        if ui.isRunning </span><span class="cov0" title="0">{
+                return fmt.Errorf("UI已在运行中")
+        }</span>
+
+        <span class="cov0" title="0">ui.isRunning = true
+
+        // 启动监控器
+        if err := ui.monitor.Start(); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("启动监控器失败: %w", err)
+        }</span>
+
+        // 启动更新协程
+        <span class="cov0" title="0">go ui.updateLoop()
+
+        // 启动UI
+        return ui.app.Run()</span>
+}
+
+// Stop 停止UI
+func (ui *RealtimeNetworkUI) Stop() <span class="cov0" title="0">{
+        if !ui.isRunning </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">ui.isRunning = false
+
+        // 停止更新定时器
+        if ui.updateTicker != nil </span><span class="cov0" title="0">{
+                ui.updateTicker.Stop()
+        }</span>
+
+        // 停止监控器
+        <span class="cov0" title="0">ui.monitor.Stop()
+
+        // 停止应用
+        ui.app.Stop()</span>
+}
+
+// updateLoop 更新循环
+func (ui *RealtimeNetworkUI) updateLoop() <span class="cov0" title="0">{
+        ui.updateTicker = time.NewTicker(1 * time.Second)
+        defer ui.updateTicker.Stop()
+
+        for ui.isRunning </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-ui.updateTicker.C:<span class="cov0" title="0">
+                        ui.updateDisplay()</span>
+                case snapshot := &lt;-ui.monitor.GetUpdateChannel():<span class="cov0" title="0">
+                        ui.updateWithSnapshot(snapshot)</span>
+                case err := &lt;-ui.monitor.GetErrorChannel():<span class="cov0" title="0">
+                        ui.showError(err)</span>
+                }
+        }
+}
+
+// updateDisplay 更新显示
+func (ui *RealtimeNetworkUI) updateDisplay() <span class="cov0" title="0">{
+        if !ui.isRunning </span><span class="cov0" title="0">{
+                return
+        }</span>
+
+        <span class="cov0" title="0">snapshot := ui.monitor.GetCurrentSnapshot()
+        if snapshot != nil </span><span class="cov0" title="0">{
+                ui.updateWithSnapshot(*snapshot)
+        }</span>
+
+        <span class="cov0" title="0">ui.app.QueueUpdateDraw(func() </span>{<span class="cov0" title="0">
+                // 强制重绘
+        }</span>)
+}
+
+// updateWithSnapshot 使用快照更新显示
+func (ui *RealtimeNetworkUI) updateWithSnapshot(snapshot NetworkResourceSnapshot) <span class="cov0" title="0">{
+        ui.app.QueueUpdateDraw(func() </span><span class="cov0" title="0">{
+                ui.updateInterfaceTable(snapshot.Interfaces)
+                ui.updateConnectionTable(snapshot.Connections)
+                ui.updateLatencyTable(snapshot.TargetLatencies)
+                ui.updateAlertList(snapshot.Alerts)
+                ui.updatePerformanceGauge(snapshot.PerformanceScore)
+                ui.updateSystemInfo(snapshot.SystemResources)
+                ui.updateStatusBar(snapshot.Timestamp)
+        }</span>)
+}
+
+// updateInterfaceTable 更新接口表格
+func (ui *RealtimeNetworkUI) updateInterfaceTable(interfaces map[string]InterfaceStats) <span class="cov0" title="0">{
+        // 清除现有数据（保留表头）
+        for row := ui.interfaceTable.GetRowCount() - 1; row &gt; 0; row-- </span><span class="cov0" title="0">{
+                ui.interfaceTable.RemoveRow(row)
+        }</span>
+
+        // 按接口名排序
+        <span class="cov0" title="0">var names []string
+        for name := range interfaces </span><span class="cov0" title="0">{
+                names = append(names, name)
+        }</span>
+        <span class="cov0" title="0">sort.Strings(names)
+
+        row := 1
+        for _, name := range names </span><span class="cov0" title="0">{
+                iface := interfaces[name]
+
+                status := "DOWN"
+                statusColor := tcell.ColorRed
+                if iface.IsUp </span><span class="cov0" title="0">{
+                        status = "UP"
+                        statusColor = tcell.ColorGreen
+                }</span>
+
+                // 计算MB
+                <span class="cov0" title="0">bytesInMB := float64(iface.BytesIn) / 1024 / 1024
+                bytesOutMB := float64(iface.BytesOut) / 1024 / 1024
+
+                // 错误统计
+                totalErrors := iface.ErrorsIn + iface.ErrorsOut + iface.DropsIn + iface.DropsOut
+
+                cells := []struct {
+                        text  string
+                        color tcell.Color
+                }{
+                        {name, tcell.ColorWhite},
+                        {status, statusColor},
+                        {strconv.Itoa(iface.MTU), tcell.ColorWhite},
+                        {fmt.Sprintf("%.2f", bytesInMB), tcell.ColorLightCyan},
+                        {fmt.Sprintf("%.2f", bytesOutMB), tcell.ColorLightCyan},
+                        {fmt.Sprintf("%.2f", iface.BandwidthInMbps), tcell.ColorYellow},
+                        {fmt.Sprintf("%.2f", iface.BandwidthOutMbps), tcell.ColorYellow},
+                        {fmt.Sprintf("%.1f", iface.Utilization), ui.getUtilizationColor(iface.Utilization)},
+                        {strconv.FormatUint(totalErrors, 10), ui.getErrorColor(totalErrors)},
+                }
+
+                for col, cell := range cells </span><span class="cov0" title="0">{
+                        ui.interfaceTable.SetCell(row, col, tview.NewTableCell(cell.text).
+                                SetTextColor(cell.color).
+                                SetAlign(tview.AlignCenter))
+                }</span>
+
+                <span class="cov0" title="0">row++</span>
+        }
+}
+
+// updateConnectionTable 更新连接表格
+func (ui *RealtimeNetworkUI) updateConnectionTable(connections ConnectionSummary) <span class="cov0" title="0">{
+        // 清除现有数据（保留表头）
+        for row := ui.connectionTable.GetRowCount() - 1; row &gt; 0; row-- </span><span class="cov0" title="0">{
+                ui.connectionTable.RemoveRow(row)
+        }</span>
+
+        // TCP行
+        <span class="cov0" title="0">ui.connectionTable.SetCell(1, 0, tview.NewTableCell("TCP").SetTextColor(tcell.ColorWhite))
+        ui.connectionTable.SetCell(1, 1, tview.NewTableCell(strconv.Itoa(connections.TCP)).SetTextColor(tcell.ColorLightCyan))
+        ui.connectionTable.SetCell(1, 2, tview.NewTableCell(strconv.Itoa(connections.Established)).SetTextColor(tcell.ColorGreen))
+        ui.connectionTable.SetCell(1, 3, tview.NewTableCell(strconv.Itoa(connections.Listen)).SetTextColor(tcell.ColorYellow))
+        ui.connectionTable.SetCell(1, 4, tview.NewTableCell(strconv.Itoa(connections.TimeWait)).SetTextColor(tcell.ColorOrange))
+        ui.connectionTable.SetCell(1, 5, tview.NewTableCell(strconv.Itoa(connections.CloseWait)).SetTextColor(tcell.ColorRed))
+
+        // UDP行
+        ui.connectionTable.SetCell(2, 0, tview.NewTableCell("UDP").SetTextColor(tcell.ColorWhite))
+        ui.connectionTable.SetCell(2, 1, tview.NewTableCell(strconv.Itoa(connections.UDP)).SetTextColor(tcell.ColorLightCyan))
+
+        // 总计行
+        ui.connectionTable.SetCell(3, 0, tview.NewTableCell("总计").SetTextColor(tcell.ColorYellow))
+        ui.connectionTable.SetCell(3, 1, tview.NewTableCell(strconv.Itoa(connections.Total)).SetTextColor(tcell.ColorYellow))
+        ui.connectionTable.SetCell(3, 2, tview.NewTableCell("-").SetTextColor(tcell.ColorGray))
+        ui.connectionTable.SetCell(3, 3, tview.NewTableCell("-").SetTextColor(tcell.ColorGray))
+        ui.connectionTable.SetCell(3, 4, tview.NewTableCell("-").SetTextColor(tcell.ColorGray))
+        ui.connectionTable.SetCell(3, 5, tview.NewTableCell("-").SetTextColor(tcell.ColorGray))</span>
+}
+
+// updateLatencyTable 更新延迟表格
+func (ui *RealtimeNetworkUI) updateLatencyTable(latencies map[string]LatencyStats) <span class="cov0" title="0">{
+        // 清除现有数据（保留表头）
+        for row := ui.latencyTable.GetRowCount() - 1; row &gt; 0; row-- </span><span class="cov0" title="0">{
+                ui.latencyTable.RemoveRow(row)
+        }</span>
+
+        // 按目标名排序
+        <span class="cov0" title="0">var targets []string
+        for target := range latencies </span><span class="cov0" title="0">{
+                targets = append(targets, target)
+        }</span>
+        <span class="cov0" title="0">sort.Strings(targets)
+
+        row := 1
+        for _, target := range targets </span><span class="cov0" title="0">{
+                latency := latencies[target]
+
+                status := "不可达"
+                statusColor := tcell.ColorRed
+                if latency.IsReachable </span><span class="cov0" title="0">{
+                        status = "可达"
+                        statusColor = tcell.ColorGreen
+                }</span>
+
+                <span class="cov0" title="0">avgLatencyMs := float64(latency.AvgLatency.Nanoseconds()) / 1e6
+                minLatencyMs := float64(latency.MinLatency.Nanoseconds()) / 1e6
+                maxLatencyMs := float64(latency.MaxLatency.Nanoseconds()) / 1e6
+                jitterMs := float64(latency.Jitter.Nanoseconds()) / 1e6
+
+                cells := []struct {
+                        text  string
+                        color tcell.Color
+                }{
+                        {target, tcell.ColorWhite},
+                        {status, statusColor},
+                        {fmt.Sprintf("%.2fms", avgLatencyMs), ui.getLatencyColor(avgLatencyMs)},
+                        {fmt.Sprintf("%.2fms", minLatencyMs), tcell.ColorLightCyan},
+                        {fmt.Sprintf("%.2fms", maxLatencyMs), tcell.ColorLightCyan},
+                        {fmt.Sprintf("%.2f%%", latency.PacketLoss), ui.getPacketLossColor(latency.PacketLoss)},
+                        {fmt.Sprintf("%.2fms", jitterMs), tcell.ColorWhite},
+                }
+
+                for col, cell := range cells </span><span class="cov0" title="0">{
+                        ui.latencyTable.SetCell(row, col, tview.NewTableCell(cell.text).
+                                SetTextColor(cell.color).
+                                SetAlign(tview.AlignCenter))
+                }</span>
+
+                <span class="cov0" title="0">row++</span>
+        }
+}
+
+// updateAlertList 更新告警列表
+func (ui *RealtimeNetworkUI) updateAlertList(alerts []Alert) <span class="cov0" title="0">{
+        ui.alertList.Clear()
+
+        if len(alerts) == 0 </span><span class="cov0" title="0">{
+                ui.alertList.AddItem("无告警", "", 0, nil)
+                return
+        }</span>
+
+        // 按时间倒序排列
+        <span class="cov0" title="0">sort.Slice(alerts, func(i, j int) bool </span><span class="cov0" title="0">{
+                return alerts[i].Timestamp.After(alerts[j].Timestamp)
+        }</span>)
+
+        <span class="cov0" title="0">for i, alert := range alerts </span><span class="cov0" title="0">{
+                if i &gt;= 10 </span><span class="cov0" title="0">{ // 最多显示10个告警
+                        break</span>
+                }
+
+                <span class="cov0" title="0">timeStr := alert.Timestamp.Format("15:04:05")
+                mainText := fmt.Sprintf("[%s] %s", ui.getSeverityColor(alert.Severity), alert.Type)
+                secondaryText := fmt.Sprintf("%s - %s", timeStr, alert.Message)
+
+                ui.alertList.AddItem(mainText, secondaryText, 0, nil)</span>
+        }
+}
+
+// updatePerformanceGauge 更新性能指示器
+func (ui *RealtimeNetworkUI) updatePerformanceGauge(score float64) <span class="cov0" title="0">{
+        var color string
+        var status string
+
+        if score &gt;= 90 </span><span class="cov0" title="0">{
+                color = "green"
+                status = "优秀"
+        }</span> else<span class="cov0" title="0"> if score &gt;= 75 </span><span class="cov0" title="0">{
+                color = "yellow"
+                status = "良好"
+        }</span> else<span class="cov0" title="0"> if score &gt;= 60 </span><span class="cov0" title="0">{
+                color = "orange"
+                status = "一般"
+        }</span> else<span class="cov0" title="0"> {
+                color = "red"
+                status = "较差"
+        }</span>
+
+        // 创建进度条
+        <span class="cov0" title="0">barLength := 20
+        filledLength := int(score / 100 * float64(barLength))
+        bar := strings.Repeat("█", filledLength) + strings.Repeat("░", barLength-filledLength)
+
+        text := fmt.Sprintf("[%s]评分: %.1f/100\n状态: %s\n\n进度: [%s]%s[white]\n\n更新时间: %s",
+                color, score, status, color, bar, time.Now().Format("15:04:05"))
+
+        ui.performanceGauge.SetText(text)</span>
+}
+
+// updateSystemInfo 更新系统信息
+func (ui *RealtimeNetworkUI) updateSystemInfo(resources SystemNetworkResources) <span class="cov0" title="0">{
+        text := fmt.Sprintf(`[cyan]打开文件: [white]%d/%d
+[cyan]网络线程: [white]%d
+[cyan]内存使用: [white]%.2f MB
+[cyan]套接字缓冲: [white]%d
+
+[yellow]监控状态:[white]
+运行中: %v
+历史记录: %d`,
+                resources.OpenFiles,
+                resources.MaxOpenFiles,
+                resources.NetworkThreads,
+                resources.MemoryUsageMB,
+                resources.SocketBuffers,
+                ui.monitor.IsRunning(),
+                len(ui.monitor.GetHistory()))
+
+        ui.systemInfo.SetText(text)
+}</span>
+
+// updateStatusBar 更新状态栏
+func (ui *RealtimeNetworkUI) updateStatusBar(timestamp time.Time) <span class="cov0" title="0">{
+        status := "[green]运行中"
+        if !ui.monitor.IsRunning() </span><span class="cov0" title="0">{
+                status = "[red]已停止"
+        }</span>
+
+        <span class="cov0" title="0">text := fmt.Sprintf("%s [white]| 最后更新: %s | 按键: [yellow]q[white]=退出 [yellow]r[white]=重启 [yellow]p[white]=暂停 [yellow]c[white]=清除告警",
+                status, timestamp.Format("15:04:05"))
+
+        ui.statusBar.SetText(text)</span>
+}
+
+// 辅助方法：获取颜色
+func (ui *RealtimeNetworkUI) getUtilizationColor(utilization float64) tcell.Color <span class="cov0" title="0">{
+        if utilization &gt; 80 </span><span class="cov0" title="0">{
+                return tcell.ColorRed
+        }</span> else<span class="cov0" title="0"> if utilization &gt; 60 </span><span class="cov0" title="0">{
+                return tcell.ColorOrange
+        }</span> else<span class="cov0" title="0"> if utilization &gt; 40 </span><span class="cov0" title="0">{
+                return tcell.ColorYellow
+        }</span>
+        <span class="cov0" title="0">return tcell.ColorGreen</span>
+}
+
+func (ui *RealtimeNetworkUI) getErrorColor(errors uint64) tcell.Color <span class="cov0" title="0">{
+        if errors &gt; 100 </span><span class="cov0" title="0">{
+                return tcell.ColorRed
+        }</span> else<span class="cov0" title="0"> if errors &gt; 10 </span><span class="cov0" title="0">{
+                return tcell.ColorOrange
+        }</span> else<span class="cov0" title="0"> if errors &gt; 0 </span><span class="cov0" title="0">{
+                return tcell.ColorYellow
+        }</span>
+        <span class="cov0" title="0">return tcell.ColorGreen</span>
+}
+
+func (ui *RealtimeNetworkUI) getLatencyColor(latencyMs float64) tcell.Color <span class="cov0" title="0">{
+        if latencyMs &gt; 100 </span><span class="cov0" title="0">{
+                return tcell.ColorRed
+        }</span> else<span class="cov0" title="0"> if latencyMs &gt; 50 </span><span class="cov0" title="0">{
+                return tcell.ColorOrange
+        }</span> else<span class="cov0" title="0"> if latencyMs &gt; 20 </span><span class="cov0" title="0">{
+                return tcell.ColorYellow
+        }</span>
+        <span class="cov0" title="0">return tcell.ColorGreen</span>
+}
+
+func (ui *RealtimeNetworkUI) getPacketLossColor(packetLoss float64) tcell.Color <span class="cov0" title="0">{
+        if packetLoss &gt; 5 </span><span class="cov0" title="0">{
+                return tcell.ColorRed
+        }</span> else<span class="cov0" title="0"> if packetLoss &gt; 1 </span><span class="cov0" title="0">{
+                return tcell.ColorOrange
+        }</span> else<span class="cov0" title="0"> if packetLoss &gt; 0 </span><span class="cov0" title="0">{
+                return tcell.ColorYellow
+        }</span>
+        <span class="cov0" title="0">return tcell.ColorGreen</span>
+}
+
+func (ui *RealtimeNetworkUI) getSeverityColor(severity string) string <span class="cov0" title="0">{
+        switch severity </span>{
+        case "critical":<span class="cov0" title="0">
+                return "red"</span>
+        case "warning":<span class="cov0" title="0">
+                return "yellow"</span>
+        case "info":<span class="cov0" title="0">
+                return "blue"</span>
+        default:<span class="cov0" title="0">
+                return "white"</span>
+        }
+}
+
+// 交互方法
+func (ui *RealtimeNetworkUI) restartMonitoring() <span class="cov0" title="0">{
+        ui.monitor.Stop()
+        time.Sleep(100 * time.Millisecond)
+        ui.monitor.Start()
+}</span>
+
+func (ui *RealtimeNetworkUI) togglePause() <span class="cov0" title="0">{
+        if ui.monitor.IsRunning() </span><span class="cov0" title="0">{
+                ui.monitor.Stop()
+        }</span> else<span class="cov0" title="0"> {
+                ui.monitor.Start()
+        }</span>
+}
+
+func (ui *RealtimeNetworkUI) clearAlerts() <span class="cov0" title="0">{
+        ui.alertList.Clear()
+        ui.alertList.AddItem("告警已清除", "", 0, nil)
+}</span>
+
+func (ui *RealtimeNetworkUI) acknowledgeAlert(index int) <span class="cov0" title="0">{
+        // 这里可以实现告警确认逻辑
+        ui.alertList.SetItemText(index, "[green]已确认", "")
+}</span>
+
+func (ui *RealtimeNetworkUI) switchFocus() <span class="cov0" title="0">{
+        // 实现焦点切换逻辑
+        current := ui.app.GetFocus()
+        switch current </span>{
+        case ui.interfaceTable:<span class="cov0" title="0">
+                ui.app.SetFocus(ui.connectionTable)</span>
+        case ui.connectionTable:<span class="cov0" title="0">
+                ui.app.SetFocus(ui.latencyTable)</span>
+        case ui.latencyTable:<span class="cov0" title="0">
+                ui.app.SetFocus(ui.alertList)</span>
+        case ui.alertList:<span class="cov0" title="0">
+                ui.app.SetFocus(ui.interfaceTable)</span>
+        default:<span class="cov0" title="0">
+                ui.app.SetFocus(ui.interfaceTable)</span>
+        }
+}
+
+func (ui *RealtimeNetworkUI) showError(err error) <span class="cov0" title="0">{
+        ui.app.QueueUpdateDraw(func() </span><span class="cov0" title="0">{
+                ui.statusBar.SetText(fmt.Sprintf("[red]错误: %v", err))
+        }</span>)
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-5-31 22:15:40
+* @Description: 性能分析器的核心实现
+ */
+
+package performance
+
+import (
+        "context"
+        "fmt"
+        "runtime"
+        "sync"
+        "sync/atomic"
+        "time"
+
+        "github.com/shirou/gopsutil/v3/cpu"
+        "github.com/shirou/gopsutil/v3/mem"
+        "github.com/shirou/gopsutil/v3/process"
+)
+
+// TaskPerformanceAnalyzer 任务执行性能分析器
+type TaskPerformanceAnalyzer struct {
+        mu             sync.RWMutex
+        isRunning      bool
+        isStopping     bool
+        ctx            context.Context
+        cancel         context.CancelFunc
+        config         AnalyzerConfig
+        metrics        map[string]*TaskMetrics
+        systemBaseline *SystemMetrics
+        updateChan     chan TaskMetrics
+        errorChan      chan error
+        alertChan      chan PerformanceAlert
+
+        // 添加goroutine管理
+        activeGoroutines sync.WaitGroup
+
+        // 内部通道，用于安全发送
+        internalUpdateChan chan TaskMetrics
+        internalErrorChan  chan error
+        internalAlertChan  chan PerformanceAlert
+
+        // 原子标志防止向已关闭通道发送数据
+        channelsClosed int32 // 0: 开放, 1: 已关闭
+
+        // 确保通道只关闭一次
+        closeOnce sync.Once
+}
+
+// AnalyzerConfig 性能分析器配置
+type AnalyzerConfig struct {
+        SampleInterval  time.Duration   `json:"sample_interval"`  // 采样间隔
+        Timeout         time.Duration   `json:"timeout"`          // 操作超时时间
+        MaxHistory      int             `json:"max_history"`      // 最大历史记录数
+        EnableAlerts    bool            `json:"enable_alerts"`    // 启用告警
+        AlertThresholds AlertThresholds `json:"alert_thresholds"` // 告警阈值
+        EnableProfiling bool            `json:"enable_profiling"` // 启用性能剖析
+}
+
+// AlertThresholds 告警阈值配置
+type AlertThresholds struct {
+        CPUUsagePercent float64 `json:"cpu_usage_percent"` // CPU使用率阈值
+        MemoryUsageMB   float64 `json:"memory_usage_mb"`   // 内存使用阈值(MB)
+        ExecutionTimeMs int64   `json:"execution_time_ms"` // 执行时间阈值(毫秒)
+        GoroutineCount  int     `json:"goroutine_count"`   // 协程数量阈值
+        GCPauseMs       float64 `json:"gc_pause_ms"`       // GC暂停时间阈值(毫秒)
+}
+
+// TaskMetrics 任务性能指标
+type TaskMetrics struct {
+        TaskID         string                 `json:"task_id"`
+        TaskName       string                 `json:"task_name"`
+        StartTime      time.Time              `json:"start_time"`
+        EndTime        time.Time              `json:"end_time"`
+        Duration       time.Duration          `json:"duration"`
+        CPUUsage       CPUMetrics             `json:"cpu_usage"`
+        MemoryUsage    MemoryMetrics          `json:"memory_usage"`
+        SystemMetrics  SystemMetrics          `json:"system_metrics"`
+        RuntimeMetrics RuntimeMetrics         `json:"runtime_metrics"`
+        CustomMetrics  map[string]interface{} `json:"custom_metrics"`
+        Timestamp      time.Time              `json:"timestamp"`
+}
+
+// CPUMetrics CPU使用指标
+type CPUMetrics struct {
+        UserPercent   float64   `json:"user_percent"`   // 用户态CPU使用率
+        SystemPercent float64   `json:"system_percent"` // 系统态CPU使用率
+        TotalPercent  float64   `json:"total_percent"`  // 总CPU使用率
+        LoadAverage   []float64 `json:"load_average"`   // 负载平均值
+}
+
+// MemoryMetrics 内存使用指标
+type MemoryMetrics struct {
+        RSS         uint64  `json:"rss"`          // 常驻内存集
+        VMS         uint64  `json:"vms"`          // 虚拟内存大小
+        Swap        uint64  `json:"swap"`         // 交换内存
+        UsedPercent float64 `json:"used_percent"` // 内存使用百分比
+        AvailableMB uint64  `json:"available_mb"` // 可用内存(MB)
+}
+
+// SystemMetrics 系统指标
+type SystemMetrics struct {
+        TotalCPUPercent    float64 `json:"total_cpu_percent"`    // 系统总CPU使用率
+        TotalMemoryUsedMB  uint64  `json:"total_memory_used_mb"` // 系统总内存使用(MB)
+        TotalMemoryPercent float64 `json:"total_memory_percent"` // 系统内存使用百分比
+        DiskIOReadMB       float64 `json:"disk_io_read_mb"`      // 磁盘读取(MB)
+        DiskIOWriteMB      float64 `json:"disk_io_write_mb"`     // 磁盘写入(MB)
+        NetworkInMB        float64 `json:"network_in_mb"`        // 网络接收(MB)
+        NetworkOutMB       float64 `json:"network_out_mb"`       // 网络发送(MB)
+}
+
+// RuntimeMetrics Go运行时指标
+type RuntimeMetrics struct {
+        GoroutineCount int     `json:"goroutine_count"` // 协程数量
+        HeapAllocMB    float64 `json:"heap_alloc_mb"`   // 堆内存分配(MB)
+        HeapSysMB      float64 `json:"heap_sys_mb"`     // 堆系统内存(MB)
+        GCCount        uint32  `json:"gc_count"`        // GC次数
+        GCPauseMs      float64 `json:"gc_pause_ms"`     // GC暂停时间(毫秒)
+        NextGCMB       float64 `json:"next_gc_mb"`      // 下次GC阈值(MB)
+}
+
+// PerformanceAlert 性能告警
+type PerformanceAlert struct {
+        ID         string    `json:"id"`
+        Type       string    `json:"type"`
+        Severity   string    `json:"severity"`
+        Message    string    `json:"message"`
+        TaskID     string    `json:"task_id"`
+        MetricName string    `json:"metric_name"`
+        Value      float64   `json:"value"`
+        Threshold  float64   `json:"threshold"`
+        Timestamp  time.Time `json:"timestamp"`
+}
+
+// TaskExecutionContext 任务执行上下文
+type TaskExecutionContext struct {
+        TaskID     string
+        TaskName   string
+        StartTime  time.Time
+        process    *process.Process
+        initialMem *runtime.MemStats
+        samples    []TaskMetrics
+        mu         sync.RWMutex
+}
+
+// NewTaskPerformanceAnalyzer 创建新的性能分析器
+func NewTaskPerformanceAnalyzer(config AnalyzerConfig) *TaskPerformanceAnalyzer <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(context.Background())
+
+        // 设置默认值
+        if config.SampleInterval == 0 </span><span class="cov0" title="0">{
+                config.SampleInterval = 1 * time.Second
+        }</span>
+        <span class="cov8" title="1">if config.Timeout == 0 </span><span class="cov0" title="0">{
+                config.Timeout = 30 * time.Second
+        }</span>
+        <span class="cov8" title="1">if config.MaxHistory == 0 </span><span class="cov0" title="0">{
+                config.MaxHistory = 1000
+        }</span>
+
+        <span class="cov8" title="1">analyzer := &amp;TaskPerformanceAnalyzer{
+                ctx:                ctx,
+                cancel:             cancel,
+                config:             config,
+                metrics:            make(map[string]*TaskMetrics),
+                updateChan:         make(chan TaskMetrics, 100),
+                errorChan:          make(chan error, 10),
+                alertChan:          make(chan PerformanceAlert, 50),
+                internalUpdateChan: make(chan TaskMetrics, 100),
+                internalErrorChan:  make(chan error, 10),
+                internalAlertChan:  make(chan PerformanceAlert, 50),
+        }
+
+        return analyzer</span>
+}
+
+// Start 启动性能分析器
+func (tpa *TaskPerformanceAnalyzer) Start() error <span class="cov8" title="1">{
+        tpa.mu.Lock()
+        defer tpa.mu.Unlock()
+
+        if tpa.isRunning </span><span class="cov8" title="1">{
+                return fmt.Errorf("性能分析器已在运行中")
+        }</span>
+
+        <span class="cov8" title="1">tpa.isRunning = true
+        tpa.isStopping = false
+
+        // 启动通道转发goroutine
+        tpa.activeGoroutines.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer tpa.activeGoroutines.Done()
+                tpa.channelForwarder()
+        }</span>()
+
+        // 收集系统基线指标，使用WaitGroup跟踪
+        <span class="cov8" title="1">tpa.activeGoroutines.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer tpa.activeGoroutines.Done()
+                tpa.collectSystemBaseline()
+        }</span>()
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// Stop 停止性能分析器（简化版本，避免竞态条件）
+func (tpa *TaskPerformanceAnalyzer) Stop() error <span class="cov8" title="1">{
+        // 首先设置原子标志，防止向通道发送新数据
+        atomic.StoreInt32(&amp;tpa.channelsClosed, 1)
+
+        tpa.mu.Lock()
+
+        if !tpa.isRunning </span><span class="cov8" title="1">{
+                tpa.mu.Unlock()
+                return fmt.Errorf("性能分析器未在运行")
+        }</span>
+
+        // 标记为正在停止，防止新的goroutine启动
+        <span class="cov8" title="1">tpa.isStopping = true
+        tpa.isRunning = false
+
+        // 取消上下文，通知所有goroutine停止
+        tpa.cancel()
+
+        tpa.mu.Unlock()
+
+        // 等待所有活跃的goroutine退出
+        // 使用超时防止无限等待
+        done := make(chan struct{})
+        go func() </span><span class="cov8" title="1">{
+                tpa.activeGoroutines.Wait()
+                close(done)
+        }</span>()
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1"></span>
+                // 所有goroutine已退出
+        case &lt;-time.After(5 * time.Second):<span class="cov0" title="0"></span>
+                // 超时，强制继续
+        }
+
+        // 不显式关闭通道，让垃圾回收器处理
+        // 这避免了竞态条件，因为通道仍然可以接收数据，只是没有人会读取
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// StartTaskAnalysis 开始任务性能分析
+func (tpa *TaskPerformanceAnalyzer) StartTaskAnalysis(taskID, taskName string) (*TaskExecutionContext, error) <span class="cov8" title="1">{
+        tpa.mu.RLock()
+        isRunning := tpa.isRunning
+        isStopping := tpa.isStopping
+        tpa.mu.RUnlock()
+
+        if !isRunning || isStopping </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("性能分析器未运行或正在停止")
+        }</span>
+
+        // 获取当前进程
+        <span class="cov8" title="1">pid := int32(runtime.GOMAXPROCS(0))
+        proc, err := process.NewProcess(pid)
+        if err != nil </span><span class="cov0" title="0">{
+                // 如果无法获取进程信息，继续但记录错误
+                tpa.mu.RLock()
+                isRunning = tpa.isRunning
+                tpa.mu.RUnlock()
+
+                if isRunning </span><span class="cov0" title="0">{
+                        tpa.safeSendError(fmt.Errorf("获取进程信息失败: %w", err))
+                }</span>
+        }
+
+        // 获取初始内存统计
+        <span class="cov8" title="1">var initialMem runtime.MemStats
+        runtime.ReadMemStats(&amp;initialMem)
+
+        ctx := &amp;TaskExecutionContext{
+                TaskID:     taskID,
+                TaskName:   taskName,
+                StartTime:  time.Now(),
+                process:    proc,
+                initialMem: &amp;initialMem,
+                samples:    make([]TaskMetrics, 0),
+        }
+
+        // 启动采样协程，并使用WaitGroup跟踪
+        tpa.activeGoroutines.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer tpa.activeGoroutines.Done()
+                tpa.sampleTaskMetrics(ctx)
+        }</span>()
+
+        <span class="cov8" title="1">return ctx, nil</span>
+}
+
+// FinishTaskAnalysis 完成任务性能分析
+func (tpa *TaskPerformanceAnalyzer) FinishTaskAnalysis(ctx *TaskExecutionContext) *TaskMetrics <span class="cov8" title="1">{
+        if ctx == nil </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        <span class="cov8" title="1">endTime := time.Now()
+        duration := endTime.Sub(ctx.StartTime)
+
+        // 收集最终指标
+        finalMetrics := tpa.collectCurrentMetrics(ctx.TaskID, ctx.TaskName)
+        finalMetrics.StartTime = ctx.StartTime
+        finalMetrics.EndTime = endTime
+        finalMetrics.Duration = duration
+
+        // 存储指标
+        tpa.mu.Lock()
+        tpa.metrics[ctx.TaskID] = &amp;finalMetrics
+        tpa.mu.Unlock()
+
+        // 发送更新通知（检查分析器是否仍在运行）
+        tpa.mu.RLock()
+        isRunning := tpa.isRunning
+        tpa.mu.RUnlock()
+
+        if isRunning </span><span class="cov8" title="1">{
+                tpa.safeSendUpdate(finalMetrics)
+        }</span>
+
+        // 检查告警
+        <span class="cov8" title="1">if tpa.config.EnableAlerts &amp;&amp; isRunning </span><span class="cov8" title="1">{
+                tpa.checkAlerts(finalMetrics)
+        }</span>
+
+        <span class="cov8" title="1">return &amp;finalMetrics</span>
+}
+
+// sampleTaskMetrics 采样任务指标
+func (tpa *TaskPerformanceAnalyzer) sampleTaskMetrics(ctx *TaskExecutionContext) <span class="cov8" title="1">{
+        ticker := time.NewTicker(tpa.config.SampleInterval)
+        defer ticker.Stop()
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-tpa.ctx.Done():<span class="cov8" title="1">
+                        return</span>
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        // 使用超时上下文防止死锁
+                        sampleCtx, cancel := context.WithTimeout(tpa.ctx, tpa.config.Timeout)
+                        metrics := tpa.collectCurrentMetricsWithContext(sampleCtx, ctx.TaskID, ctx.TaskName)
+                        cancel()
+
+                        if metrics.TaskID != "" </span><span class="cov8" title="1">{
+                                ctx.mu.Lock()
+                                ctx.samples = append(ctx.samples, metrics)
+                                // 限制样本数量
+                                if len(ctx.samples) &gt; tpa.config.MaxHistory </span><span class="cov8" title="1">{
+                                        ctx.samples = ctx.samples[len(ctx.samples)-tpa.config.MaxHistory:]
+                                }</span>
+                                <span class="cov8" title="1">ctx.mu.Unlock()</span>
+                        }
+                }
+        }
+}
+
+// collectCurrentMetrics 收集当前指标
+func (tpa *TaskPerformanceAnalyzer) collectCurrentMetrics(taskID, taskName string) TaskMetrics <span class="cov8" title="1">{
+        ctx, cancel := context.WithTimeout(context.Background(), tpa.config.Timeout)
+        defer cancel()
+        return tpa.collectCurrentMetricsWithContext(ctx, taskID, taskName)
+}</span>
+
+// collectCurrentMetricsWithContext 使用上下文控制收集当前指标（并发安全版本）
+func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context.Context, taskID, taskName string) TaskMetrics <span class="cov8" title="1">{
+        // 创建本地指标结构体，避免并发访问问题
+        metrics := TaskMetrics{
+                TaskID:        taskID,
+                TaskName:      taskName,
+                Timestamp:     time.Now(),
+                CustomMetrics: make(map[string]interface{}),
+        }
+
+        // 使用独立的结构体来收集各种指标，避免并发访问问题
+        type metricsContainer struct {
+                mu       sync.Mutex
+                cpu      CPUMetrics
+                memory   MemoryMetrics
+                system   SystemMetrics
+                runtime  RuntimeMetrics
+                cpuReady bool
+                memReady bool
+                sysReady bool
+                rtReady  bool
+        }
+
+        container := &amp;metricsContainer{}
+        var wg sync.WaitGroup
+
+        // 并发收集各种指标，使用超时防止死锁
+
+        // 收集CPU指标
+        wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                // 检查是否正在停止
+                tpa.mu.RLock()
+                isStopping := tpa.isStopping
+                tpa.mu.RUnlock()
+
+                if isStopping </span><span class="cov8" title="1">{
+                        return
+                }</span>
+
+                <span class="cov8" title="1">result, err := tpa.collectCPUMetrics(ctx)
+                if err != nil </span><span class="cov8" title="1">{
+                        // 检查分析器是否仍在运行，避免向已关闭的通道发送数据
+                        tpa.mu.RLock()
+                        isRunning := tpa.isRunning
+                        tpa.mu.RUnlock()
+
+                        if isRunning </span><span class="cov8" title="1">{
+                                tpa.safeSendError(fmt.Errorf("收集CPU指标失败: %w", err))
+                        }</span>
+                        <span class="cov8" title="1">return</span>
+                }
+                <span class="cov8" title="1">container.mu.Lock()
+                container.cpu = result
+                container.cpuReady = true
+                container.mu.Unlock()</span>
+        }()
+
+        // 收集内存指标
+        <span class="cov8" title="1">wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                // 检查是否正在停止
+                tpa.mu.RLock()
+                isStopping := tpa.isStopping
+                tpa.mu.RUnlock()
+
+                if isStopping </span><span class="cov8" title="1">{
+                        return
+                }</span>
+
+                <span class="cov8" title="1">result, err := tpa.collectMemoryMetrics(ctx)
+                if err != nil </span><span class="cov0" title="0">{
+                        // 检查分析器是否仍在运行，避免向已关闭的通道发送数据
+                        tpa.mu.RLock()
+                        isRunning := tpa.isRunning
+                        tpa.mu.RUnlock()
+
+                        if isRunning </span><span class="cov0" title="0">{
+                                tpa.safeSendError(fmt.Errorf("收集内存指标失败: %w", err))
+                        }</span>
+                        <span class="cov0" title="0">return</span>
+                }
+                <span class="cov8" title="1">container.mu.Lock()
+                container.memory = result
+                container.memReady = true
+                container.mu.Unlock()</span>
+        }()
+
+        // 收集系统指标
+        <span class="cov8" title="1">wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                // 检查是否正在停止
+                tpa.mu.RLock()
+                isStopping := tpa.isStopping
+                tpa.mu.RUnlock()
+
+                if isStopping </span><span class="cov8" title="1">{
+                        return
+                }</span>
+
+                <span class="cov8" title="1">result, err := tpa.collectSystemMetrics(ctx)
+                if err != nil </span><span class="cov0" title="0">{
+                        // 检查分析器是否仍在运行，避免向已关闭的通道发送数据
+                        tpa.mu.RLock()
+                        isRunning := tpa.isRunning
+                        tpa.mu.RUnlock()
+
+                        if isRunning </span><span class="cov0" title="0">{
+                                tpa.safeSendError(fmt.Errorf("收集系统指标失败: %w", err))
+                        }</span>
+                        <span class="cov0" title="0">return</span>
+                }
+                <span class="cov8" title="1">container.mu.Lock()
+                container.system = result
+                container.sysReady = true
+                container.mu.Unlock()</span>
+        }()
+
+        // 收集运行时指标（现在也用锁保护）
+        <span class="cov8" title="1">wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                // 检查是否正在停止
+                tpa.mu.RLock()
+                isStopping := tpa.isStopping
+                tpa.mu.RUnlock()
+
+                if isStopping </span><span class="cov8" title="1">{
+                        return
+                }</span>
+
+                <span class="cov8" title="1">result := tpa.collectRuntimeMetrics()
+                container.mu.Lock()
+                container.runtime = result
+                container.rtReady = true
+                container.mu.Unlock()</span>
+        }()
+
+        // 等待所有收集任务完成或超时
+        <span class="cov8" title="1">done := make(chan struct{})
+        go func() </span><span class="cov8" title="1">{
+                wg.Wait()
+                close(done)
+        }</span>()
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1">
+                // 所有任务完成，安全地复制数据到结果中
+                container.mu.Lock()
+                if container.cpuReady </span><span class="cov8" title="1">{
+                        metrics.CPUUsage = container.cpu
+                }</span>
+                <span class="cov8" title="1">if container.memReady </span><span class="cov8" title="1">{
+                        metrics.MemoryUsage = container.memory
+                }</span>
+                <span class="cov8" title="1">if container.sysReady </span><span class="cov8" title="1">{
+                        metrics.SystemMetrics = container.system
+                }</span>
+                <span class="cov8" title="1">if container.rtReady </span><span class="cov8" title="1">{
+                        metrics.RuntimeMetrics = container.runtime
+                }</span>
+                <span class="cov8" title="1">container.mu.Unlock()</span>
+
+        case &lt;-ctx.Done():<span class="cov8" title="1">
+                // 超时，返回部分数据
+                // 检查分析器是否仍在运行，避免向已关闭的通道发送数据
+                tpa.mu.RLock()
+                isRunning := tpa.isRunning
+                tpa.mu.RUnlock()
+
+                if isRunning </span><span class="cov8" title="1">{
+                        tpa.safeSendError(fmt.Errorf("指标收集超时"))
+                }</span>
+
+                // 即使超时，也尝试获取已收集的数据
+                <span class="cov8" title="1">container.mu.Lock()
+                if container.cpuReady </span><span class="cov8" title="1">{
+                        metrics.CPUUsage = container.cpu
+                }</span>
+                <span class="cov8" title="1">if container.memReady </span><span class="cov8" title="1">{
+                        metrics.MemoryUsage = container.memory
+                }</span>
+                <span class="cov8" title="1">if container.sysReady </span><span class="cov8" title="1">{
+                        metrics.SystemMetrics = container.system
+                }</span>
+                <span class="cov8" title="1">if container.rtReady </span><span class="cov8" title="1">{
+                        metrics.RuntimeMetrics = container.runtime
+                }</span>
+                <span class="cov8" title="1">container.mu.Unlock()</span>
+        }
+
+        <span class="cov8" title="1">return metrics</span>
+}
+
+// collectCPUMetrics 收集CPU指标
+func (tpa *TaskPerformanceAnalyzer) collectCPUMetrics(ctx context.Context) (CPUMetrics, error) <span class="cov8" title="1">{
+        var metrics CPUMetrics
+
+        // 获取CPU使用率
+        cpuPercents, err := cpu.PercentWithContext(ctx, time.Second, false)
+        if err != nil </span><span class="cov8" title="1">{
+                return metrics, err
+        }</span>
+
+        <span class="cov8" title="1">if len(cpuPercents) &gt; 0 </span><span class="cov8" title="1">{
+                metrics.TotalPercent = cpuPercents[0]
+        }</span>
+
+        // 获取负载平均值（仅Linux/Unix）
+        <span class="cov8" title="1">if runtime.GOOS != "windows" </span>{<span class="cov8" title="1">
+                // 这里可以添加负载平均值的获取逻辑
+                // 由于gopsutil的load包在某些环境下可能有问题，我们暂时跳过
+        }</span>
+
+        <span class="cov8" title="1">return metrics, nil</span>
+}
+
+// collectMemoryMetrics 收集内存指标
+func (tpa *TaskPerformanceAnalyzer) collectMemoryMetrics(ctx context.Context) (MemoryMetrics, error) <span class="cov8" title="1">{
+        var metrics MemoryMetrics
+
+        // 获取系统内存信息
+        vmem, err := mem.VirtualMemoryWithContext(ctx)
+        if err != nil </span><span class="cov0" title="0">{
+                return metrics, err
+        }</span>
+
+        <span class="cov8" title="1">metrics.UsedPercent = vmem.UsedPercent
+        metrics.AvailableMB = vmem.Available / 1024 / 1024
+
+        // 获取当前进程内存信息
+        pid := int32(runtime.GOMAXPROCS(0))
+        proc, err := process.NewProcessWithContext(ctx, pid)
+        if err == nil </span><span class="cov8" title="1">{
+                if memInfo, err := proc.MemoryInfoWithContext(ctx); err == nil </span><span class="cov8" title="1">{
+                        metrics.RSS = memInfo.RSS
+                        metrics.VMS = memInfo.VMS
+                }</span>
+        }
+
+        <span class="cov8" title="1">return metrics, nil</span>
+}
+
+// collectSystemMetrics 收集系统指标
+func (tpa *TaskPerformanceAnalyzer) collectSystemMetrics(ctx context.Context) (SystemMetrics, error) <span class="cov8" title="1">{
+        var metrics SystemMetrics
+
+        // 获取系统CPU使用率
+        cpuPercents, err := cpu.PercentWithContext(ctx, time.Second, false)
+        if err == nil &amp;&amp; len(cpuPercents) &gt; 0 </span><span class="cov8" title="1">{
+                metrics.TotalCPUPercent = cpuPercents[0]
+        }</span>
+
+        // 获取系统内存使用
+        <span class="cov8" title="1">vmem, err := mem.VirtualMemoryWithContext(ctx)
+        if err == nil </span><span class="cov8" title="1">{
+                metrics.TotalMemoryUsedMB = vmem.Used / 1024 / 1024
+                metrics.TotalMemoryPercent = vmem.UsedPercent
+        }</span>
+
+        <span class="cov8" title="1">return metrics, nil</span>
+}
+
+// collectRuntimeMetrics 收集Go运行时指标
+func (tpa *TaskPerformanceAnalyzer) collectRuntimeMetrics() RuntimeMetrics <span class="cov8" title="1">{
+        var memStats runtime.MemStats
+        runtime.ReadMemStats(&amp;memStats)
+
+        return RuntimeMetrics{
+                GoroutineCount: runtime.NumGoroutine(),
+                HeapAllocMB:    float64(memStats.HeapAlloc) / 1024 / 1024,
+                HeapSysMB:      float64(memStats.HeapSys) / 1024 / 1024,
+                GCCount:        memStats.NumGC,
+                GCPauseMs:      float64(memStats.PauseNs[(memStats.NumGC+255)%256]) / 1e6,
+                NextGCMB:       float64(memStats.NextGC) / 1024 / 1024,
+        }
+}</span>
+
+// collectSystemBaseline 收集系统基线指标
+func (tpa *TaskPerformanceAnalyzer) collectSystemBaseline() <span class="cov8" title="1">{
+        ctx, cancel := context.WithTimeout(tpa.ctx, tpa.config.Timeout)
+        defer cancel()
+
+        baseline, err := tpa.collectSystemMetrics(ctx)
+        if err != nil </span><span class="cov0" title="0">{
+                tpa.safeSendError(fmt.Errorf("收集系统基线失败: %w", err))
+                return
+        }</span>
+
+        <span class="cov8" title="1">tpa.mu.Lock()
+        tpa.systemBaseline = &amp;baseline
+        tpa.mu.Unlock()</span>
+}
+
+// checkAlerts 检查告警条件
+func (tpa *TaskPerformanceAnalyzer) checkAlerts(metrics TaskMetrics) <span class="cov8" title="1">{
+        alerts := make([]PerformanceAlert, 0)
+
+        // 检查CPU使用率告警
+        if metrics.CPUUsage.TotalPercent &gt; tpa.config.AlertThresholds.CPUUsagePercent </span><span class="cov8" title="1">{
+                alert := PerformanceAlert{
+                        ID:         fmt.Sprintf("cpu_%s_%d", metrics.TaskID, time.Now().Unix()),
+                        Type:       "cpu_usage",
+                        Severity:   "warning",
+                        Message:    fmt.Sprintf("任务 %s CPU使用率过高: %.2f%%", metrics.TaskName, metrics.CPUUsage.TotalPercent),
+                        TaskID:     metrics.TaskID,
+                        MetricName: "cpu_usage_percent",
+                        Value:      metrics.CPUUsage.TotalPercent,
+                        Threshold:  tpa.config.AlertThresholds.CPUUsagePercent,
+                        Timestamp:  time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 检查内存使用告警
+        <span class="cov8" title="1">memUsageMB := float64(metrics.MemoryUsage.RSS) / 1024 / 1024
+        if memUsageMB &gt; tpa.config.AlertThresholds.MemoryUsageMB </span><span class="cov0" title="0">{
+                alert := PerformanceAlert{
+                        ID:         fmt.Sprintf("memory_%s_%d", metrics.TaskID, time.Now().Unix()),
+                        Type:       "memory_usage",
+                        Severity:   "warning",
+                        Message:    fmt.Sprintf("任务 %s 内存使用过高: %.2f MB", metrics.TaskName, memUsageMB),
+                        TaskID:     metrics.TaskID,
+                        MetricName: "memory_usage_mb",
+                        Value:      memUsageMB,
+                        Threshold:  tpa.config.AlertThresholds.MemoryUsageMB,
+                        Timestamp:  time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 检查执行时间告警
+        <span class="cov8" title="1">if metrics.Duration.Milliseconds() &gt; tpa.config.AlertThresholds.ExecutionTimeMs </span><span class="cov8" title="1">{
+                alert := PerformanceAlert{
+                        ID:         fmt.Sprintf("duration_%s_%d", metrics.TaskID, time.Now().Unix()),
+                        Type:       "execution_time",
+                        Severity:   "info",
+                        Message:    fmt.Sprintf("任务 %s 执行时间较长: %v", metrics.TaskName, metrics.Duration),
+                        TaskID:     metrics.TaskID,
+                        MetricName: "execution_time_ms",
+                        Value:      float64(metrics.Duration.Milliseconds()),
+                        Threshold:  float64(tpa.config.AlertThresholds.ExecutionTimeMs),
+                        Timestamp:  time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 检查协程数量告警
+        <span class="cov8" title="1">if metrics.RuntimeMetrics.GoroutineCount &gt; tpa.config.AlertThresholds.GoroutineCount </span><span class="cov8" title="1">{
+                alert := PerformanceAlert{
+                        ID:         fmt.Sprintf("goroutine_%s_%d", metrics.TaskID, time.Now().Unix()),
+                        Type:       "goroutine_count",
+                        Severity:   "warning",
+                        Message:    fmt.Sprintf("任务 %s 协程数量过多: %d", metrics.TaskName, metrics.RuntimeMetrics.GoroutineCount),
+                        TaskID:     metrics.TaskID,
+                        MetricName: "goroutine_count",
+                        Value:      float64(metrics.RuntimeMetrics.GoroutineCount),
+                        Threshold:  float64(tpa.config.AlertThresholds.GoroutineCount),
+                        Timestamp:  time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 检查GC暂停时间告警
+        <span class="cov8" title="1">if metrics.RuntimeMetrics.GCPauseMs &gt; tpa.config.AlertThresholds.GCPauseMs </span><span class="cov8" title="1">{
+                alert := PerformanceAlert{
+                        ID:         fmt.Sprintf("gc_pause_%s_%d", metrics.TaskID, time.Now().Unix()),
+                        Type:       "gc_pause",
+                        Severity:   "info",
+                        Message:    fmt.Sprintf("任务 %s GC暂停时间较长: %.2f ms", metrics.TaskName, metrics.RuntimeMetrics.GCPauseMs),
+                        TaskID:     metrics.TaskID,
+                        MetricName: "gc_pause_ms",
+                        Value:      metrics.RuntimeMetrics.GCPauseMs,
+                        Threshold:  tpa.config.AlertThresholds.GCPauseMs,
+                        Timestamp:  time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 发送告警
+        <span class="cov8" title="1">for _, alert := range alerts </span><span class="cov8" title="1">{
+                tpa.safeSendAlert(alert)
+        }</span>
+}
+
+// GetUpdateChannel 获取更新通道
+func (tpa *TaskPerformanceAnalyzer) GetUpdateChannel() &lt;-chan TaskMetrics <span class="cov0" title="0">{
+        return tpa.updateChan
+}</span>
+
+// GetErrorChannel 获取错误通道
+func (tpa *TaskPerformanceAnalyzer) GetErrorChannel() &lt;-chan error <span class="cov8" title="1">{
+        return tpa.errorChan
+}</span>
+
+// GetAlertChannel 获取告警通道
+func (tpa *TaskPerformanceAnalyzer) GetAlertChannel() &lt;-chan PerformanceAlert <span class="cov8" title="1">{
+        return tpa.alertChan
+}</span>
+
+// GetTaskMetrics 获取任务指标
+func (tpa *TaskPerformanceAnalyzer) GetTaskMetrics(taskID string) (*TaskMetrics, error) <span class="cov8" title="1">{
+        tpa.mu.RLock()
+        defer tpa.mu.RUnlock()
+
+        metrics, exists := tpa.metrics[taskID]
+        if !exists </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("任务指标不存在: %s", taskID)
+        }</span>
+
+        // 返回副本
+        <span class="cov8" title="1">metricsCopy := *metrics
+        return &amp;metricsCopy, nil</span>
+}
+
+// GetAllMetrics 获取所有任务指标
+func (tpa *TaskPerformanceAnalyzer) GetAllMetrics() map[string]*TaskMetrics <span class="cov8" title="1">{
+        tpa.mu.RLock()
+        defer tpa.mu.RUnlock()
+
+        // 返回副本
+        result := make(map[string]*TaskMetrics)
+        for k, v := range tpa.metrics </span><span class="cov8" title="1">{
+                metricsCopy := *v
+                result[k] = &amp;metricsCopy
+        }</span>
+
+        <span class="cov8" title="1">return result</span>
+}
+
+// IsRunning 检查是否正在运行
+func (tpa *TaskPerformanceAnalyzer) IsRunning() bool <span class="cov8" title="1">{
+        tpa.mu.RLock()
+        defer tpa.mu.RUnlock()
+        return tpa.isRunning
+}</span>
+
+// safeSendError 安全发送错误到错误通道
+func (tpa *TaskPerformanceAnalyzer) safeSendError(err error) <span class="cov8" title="1">{
+        defer func() </span><span class="cov8" title="1">{
+                if r := recover(); r != nil </span>{<span class="cov0" title="0">
+                        // 捕获向已关闭通道发送数据的panic，静默忽略
+                }</span>
+        }()
+
+        <span class="cov8" title="1">if atomic.LoadInt32(&amp;tpa.channelsClosed) == 1 </span><span class="cov0" title="0">{
+                return // 通道已关闭，不发送
+        }</span>
+
+        <span class="cov8" title="1">select </span>{
+        case tpa.internalErrorChan &lt;- err:<span class="cov8" title="1"></span>
+        default:<span class="cov0" title="0"></span>
+                // 通道满，静默丢弃
+        }
+}
+
+// safeSendUpdate 安全发送更新到更新通道
+func (tpa *TaskPerformanceAnalyzer) safeSendUpdate(metrics TaskMetrics) <span class="cov8" title="1">{
+        defer func() </span><span class="cov8" title="1">{
+                if r := recover(); r != nil </span>{<span class="cov0" title="0">
+                        // 捕获向已关闭通道发送数据的panic，静默忽略
+                }</span>
+        }()
+
+        <span class="cov8" title="1">if atomic.LoadInt32(&amp;tpa.channelsClosed) == 1 </span><span class="cov0" title="0">{
+                return // 通道已关闭，不发送
+        }</span>
+
+        <span class="cov8" title="1">select </span>{
+        case tpa.internalUpdateChan &lt;- metrics:<span class="cov8" title="1"></span>
+        default:<span class="cov0" title="0"></span>
+                // 通道满，静默丢弃
+        }
+}
+
+// safeSendAlert 安全发送告警到告警通道
+func (tpa *TaskPerformanceAnalyzer) safeSendAlert(alert PerformanceAlert) <span class="cov8" title="1">{
+        defer func() </span><span class="cov8" title="1">{
+                if r := recover(); r != nil </span>{<span class="cov0" title="0">
+                        // 捕获向已关闭通道发送数据的panic，静默忽略
+                }</span>
+        }()
+
+        <span class="cov8" title="1">if atomic.LoadInt32(&amp;tpa.channelsClosed) == 1 </span><span class="cov0" title="0">{
+                return // 通道已关闭，不发送
+        }</span>
+
+        <span class="cov8" title="1">select </span>{
+        case tpa.internalAlertChan &lt;- alert:<span class="cov8" title="1"></span>
+        default:<span class="cov0" title="0"></span>
+                // 通道满，静默丢弃
+        }
+}
+
+// channelForwarder 通道转发器，安全地将内部通道数据转发到外部通道
+func (tpa *TaskPerformanceAnalyzer) channelForwarder() <span class="cov8" title="1">{
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-tpa.ctx.Done():<span class="cov8" title="1">
+                        return</span>
+                case update := &lt;-tpa.internalUpdateChan:<span class="cov8" title="1">
+                        select </span>{
+                        case tpa.updateChan &lt;- update:<span class="cov8" title="1"></span>
+                        case &lt;-tpa.ctx.Done():<span class="cov8" title="1">
+                                return</span>
+                        default:<span class="cov0" title="0"></span>
+                                // 外部通道满，丢弃数据
+                        }
+                case err := &lt;-tpa.internalErrorChan:<span class="cov8" title="1">
+                        select </span>{
+                        case tpa.errorChan &lt;- err:<span class="cov8" title="1"></span>
+                        case &lt;-tpa.ctx.Done():<span class="cov0" title="0">
+                                return</span>
+                        default:<span class="cov8" title="1"></span>
+                                // 外部通道满，丢弃数据
+                        }
+                case alert := &lt;-tpa.internalAlertChan:<span class="cov8" title="1">
+                        select </span>{
+                        case tpa.alertChan &lt;- alert:<span class="cov8" title="1"></span>
+                        case &lt;-tpa.ctx.Done():<span class="cov0" title="0">
+                                return</span>
+                        default:<span class="cov0" title="0"></span>
+                                // 外部通道满，丢弃数据
+                        }
+                }
+        }
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 性能优化器的核心实现
+ */
+
+package performance
+
+import (
+        "context"
+        "fmt"
+        "runtime"
+        "runtime/debug"
+        "sync"
+        "time"
+
+        "github.com/shirou/gopsutil/v3/cpu"
+        "github.com/shirou/gopsutil/v3/mem"
+)
+
+// PerformanceOptimizer 性能优化器
+type PerformanceOptimizer struct {
+        mu                sync.RWMutex
+        isRunning         bool
+        ctx               context.Context
+        cancel            context.CancelFunc
+        config            OptimizerConfig
+        lastOptimization  time.Time
+        optimizationCount int
+        metrics           OptimizationMetrics
+        alertChan         chan OptimizationAlert
+        errorChan         chan error
+}
+
+// OptimizerConfig 优化器配置
+type OptimizerConfig struct {
+        OptimizationInterval time.Duration `json:"optimization_interval"` // 优化间隔
+        Timeout              time.Duration `json:"timeout"`               // 操作超时时间
+        EnableAutoGC         bool          `json:"enable_auto_gc"`        // 启用自动GC
+        EnableMemoryLimit    bool          `json:"enable_memory_limit"`   // 启用内存限制
+        EnableCPUThrottling  bool          `json:"enable_cpu_throttling"` // 启用CPU节流
+
+        // 阈值配置
+        MemoryThresholdMB   float64 `json:"memory_threshold_mb"`   // 内存阈值(MB)
+        CPUThresholdPercent float64 `json:"cpu_threshold_percent"` // CPU阈值(%)
+        GCThresholdMB       float64 `json:"gc_threshold_mb"`       // GC阈值(MB)
+        GoroutineThreshold  int     `json:"goroutine_threshold"`   // 协程数量阈值
+
+        // 优化策略
+        GCTargetPercent int     `json:"gc_target_percent"` // GC目标百分比
+        MaxGoroutines   int     `json:"max_goroutines"`    // 最大协程数
+        MemoryLimitMB   float64 `json:"memory_limit_mb"`   // 内存限制(MB)
+        CPUQuotaPercent float64 `json:"cpu_quota_percent"` // CPU配额百分比
+}
+
+// OptimizationMetrics 优化指标
+type OptimizationMetrics struct {
+        TotalOptimizations   int       `json:"total_optimizations"`    // 总优化次数
+        GCOptimizations      int       `json:"gc_optimizations"`       // GC优化次数
+        MemoryOptimizations  int       `json:"memory_optimizations"`   // 内存优化次数
+        CPUOptimizations     int       `json:"cpu_optimizations"`      // CPU优化次数
+        LastOptimizationTime time.Time `json:"last_optimization_time"` // 最后优化时间
+
+        // 优化效果
+        MemorySavedMB   float64 `json:"memory_saved_mb"`   // 节省的内存(MB)
+        CPUSavedPercent float64 `json:"cpu_saved_percent"` // 节省的CPU(%)
+        GCPauseReduced  float64 `json:"gc_pause_reduced"`  // 减少的GC暂停时间(ms)
+
+        // 当前状态
+        CurrentMemoryMB   float64 `json:"current_memory_mb"`   // 当前内存使用(MB)
+        CurrentCPUPercent float64 `json:"current_cpu_percent"` // 当前CPU使用(%)
+        CurrentGoroutines int     `json:"current_goroutines"`  // 当前协程数
+}
+
+// OptimizationAlert 优化告警
+type OptimizationAlert struct {
+        ID        string    `json:"id"`
+        Type      string    `json:"type"`
+        Severity  string    `json:"severity"`
+        Message   string    `json:"message"`
+        Action    string    `json:"action"`
+        Value     float64   `json:"value"`
+        Threshold float64   `json:"threshold"`
+        Timestamp time.Time `json:"timestamp"`
+}
+
+// OptimizationAction 优化动作
+type OptimizationAction struct {
+        Type        string                 `json:"type"`
+        Description string                 `json:"description"`
+        Parameters  map[string]interface{} `json:"parameters"`
+        Timestamp   time.Time              `json:"timestamp"`
+        Success     bool                   `json:"success"`
+        Error       string                 `json:"error,omitempty"`
+}
+
+// NewPerformanceOptimizer 创建新的性能优化器
+func NewPerformanceOptimizer(config OptimizerConfig) *PerformanceOptimizer <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(context.Background())
+
+        // 设置默认值
+        if config.OptimizationInterval == 0 </span><span class="cov8" title="1">{
+                config.OptimizationInterval = 30 * time.Second
+        }</span>
+        <span class="cov8" title="1">if config.Timeout == 0 </span><span class="cov8" title="1">{
+                config.Timeout = 10 * time.Second
+        }</span>
+        <span class="cov8" title="1">if config.MemoryThresholdMB == 0 </span><span class="cov8" title="1">{
+                config.MemoryThresholdMB = 100.0
+        }</span>
+        <span class="cov8" title="1">if config.CPUThresholdPercent == 0 </span><span class="cov8" title="1">{
+                config.CPUThresholdPercent = 80.0
+        }</span>
+        <span class="cov8" title="1">if config.GCThresholdMB == 0 </span><span class="cov8" title="1">{
+                config.GCThresholdMB = 50.0
+        }</span>
+        <span class="cov8" title="1">if config.GoroutineThreshold == 0 </span><span class="cov8" title="1">{
+                config.GoroutineThreshold = 1000
+        }</span>
+        <span class="cov8" title="1">if config.GCTargetPercent == 0 </span><span class="cov8" title="1">{
+                config.GCTargetPercent = 100
+        }</span>
+        <span class="cov8" title="1">if config.MaxGoroutines == 0 </span><span class="cov8" title="1">{
+                config.MaxGoroutines = 10000
+        }</span>
+
+        <span class="cov8" title="1">optimizer := &amp;PerformanceOptimizer{
+                ctx:       ctx,
+                cancel:    cancel,
+                config:    config,
+                alertChan: make(chan OptimizationAlert, 50),
+                errorChan: make(chan error, 10),
+        }
+
+        return optimizer</span>
+}
+
+// Start 启动性能优化器
+func (po *PerformanceOptimizer) Start() error <span class="cov8" title="1">{
+        po.mu.Lock()
+        defer po.mu.Unlock()
+
+        if po.isRunning </span><span class="cov8" title="1">{
+                return fmt.Errorf("性能优化器已在运行中")
+        }</span>
+
+        <span class="cov8" title="1">po.isRunning = true
+
+        // 启动优化循环
+        go po.optimizationLoop()
+
+        return nil</span>
+}
+
+// Stop 停止性能优化器
+func (po *PerformanceOptimizer) Stop() error <span class="cov8" title="1">{
+        po.mu.Lock()
+        defer po.mu.Unlock()
+
+        if !po.isRunning </span><span class="cov8" title="1">{
+                return fmt.Errorf("性能优化器未在运行")
+        }</span>
+
+        <span class="cov8" title="1">po.isRunning = false
+        po.cancel()
+
+        // 等待一小段时间让协程退出
+        time.Sleep(100 * time.Millisecond)
+
+        // 安全关闭通道
+        close(po.alertChan)
+        close(po.errorChan)
+
+        return nil</span>
+}
+
+// optimizationLoop 优化循环
+func (po *PerformanceOptimizer) optimizationLoop() <span class="cov8" title="1">{
+        ticker := time.NewTicker(po.config.OptimizationInterval)
+        defer ticker.Stop()
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-po.ctx.Done():<span class="cov8" title="1">
+                        return</span>
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        // 使用超时上下文防止死锁
+                        optimizeCtx, cancel := context.WithTimeout(po.ctx, po.config.Timeout)
+                        po.performOptimization(optimizeCtx)
+                        cancel()</span>
+                }
+        }
+}
+
+// performOptimization 执行优化
+func (po *PerformanceOptimizer) performOptimization(ctx context.Context) <span class="cov8" title="1">{
+        var wg sync.WaitGroup
+        var mu sync.Mutex
+        actions := make([]OptimizationAction, 0)
+
+        // 收集当前指标
+        currentMetrics, err := po.collectCurrentMetrics(ctx)
+        if err != nil </span><span class="cov8" title="1">{
+                // 检查优化器是否仍在运行，避免向已关闭的通道发送数据
+                po.mu.RLock()
+                isRunning := po.isRunning
+                po.mu.RUnlock()
+
+                if isRunning </span><span class="cov8" title="1">{
+                        select </span>{
+                        case po.errorChan &lt;- fmt.Errorf("收集当前指标失败: %w", err):<span class="cov8" title="1"></span>
+                        default:<span class="cov0" title="0"></span>
+                        }
+                }
+                <span class="cov8" title="1">return</span>
+        }
+
+        // 更新当前状态
+        <span class="cov8" title="1">po.mu.Lock()
+        po.metrics.CurrentMemoryMB = currentMetrics.MemoryMB
+        po.metrics.CurrentCPUPercent = currentMetrics.CPUPercent
+        po.metrics.CurrentGoroutines = currentMetrics.GoroutineCount
+        po.mu.Unlock()
+
+        // 并发执行各种优化策略
+
+        // 内存优化
+        if po.config.EnableAutoGC &amp;&amp; currentMetrics.MemoryMB &gt; po.config.MemoryThresholdMB </span><span class="cov8" title="1">{
+                wg.Add(1)
+                go func() </span><span class="cov8" title="1">{
+                        defer wg.Done()
+                        action := po.optimizeMemory(ctx, currentMetrics)
+                        mu.Lock()
+                        actions = append(actions, action)
+                        mu.Unlock()
+                }</span>()
+        }
+
+        // CPU优化
+        <span class="cov8" title="1">if po.config.EnableCPUThrottling &amp;&amp; currentMetrics.CPUPercent &gt; po.config.CPUThresholdPercent </span><span class="cov8" title="1">{
+                wg.Add(1)
+                go func() </span><span class="cov8" title="1">{
+                        defer wg.Done()
+                        action := po.optimizeCPU(ctx, currentMetrics)
+                        mu.Lock()
+                        actions = append(actions, action)
+                        mu.Unlock()
+                }</span>()
+        }
+
+        // GC优化
+        <span class="cov8" title="1">if po.config.EnableAutoGC &amp;&amp; currentMetrics.HeapMB &gt; po.config.GCThresholdMB </span><span class="cov8" title="1">{
+                wg.Add(1)
+                go func() </span><span class="cov8" title="1">{
+                        defer wg.Done()
+                        action := po.optimizeGC(ctx, currentMetrics)
+                        mu.Lock()
+                        actions = append(actions, action)
+                        mu.Unlock()
+                }</span>()
+        }
+
+        // 协程优化
+        <span class="cov8" title="1">if currentMetrics.GoroutineCount &gt; po.config.GoroutineThreshold </span><span class="cov8" title="1">{
+                wg.Add(1)
+                go func() </span><span class="cov8" title="1">{
+                        defer wg.Done()
+                        action := po.optimizeGoroutines(ctx, currentMetrics)
+                        mu.Lock()
+                        actions = append(actions, action)
+                        mu.Unlock()
+                }</span>()
+        }
+
+        // 等待所有优化任务完成或超时
+        <span class="cov8" title="1">done := make(chan struct{})
+        go func() </span><span class="cov8" title="1">{
+                wg.Wait()
+                close(done)
+        }</span>()
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1"></span>
+                // 所有优化任务完成
+        case &lt;-ctx.Done():<span class="cov0" title="0">
+                // 超时
+                // 检查优化器是否仍在运行，避免向已关闭的通道发送数据
+                po.mu.RLock()
+                isRunning := po.isRunning
+                po.mu.RUnlock()
+
+                if isRunning </span><span class="cov0" title="0">{
+                        select </span>{
+                        case po.errorChan &lt;- fmt.Errorf("优化任务超时"):<span class="cov0" title="0"></span>
+                        default:<span class="cov0" title="0"></span>
+                        }
+                }
+                <span class="cov0" title="0">return</span>
+        }
+
+        // 更新优化统计
+        <span class="cov8" title="1">po.updateOptimizationStats(actions)
+
+        // 发送告警（如果需要）
+        po.checkOptimizationAlerts(currentMetrics, actions)</span>
+}
+
+// collectCurrentMetrics 收集当前指标
+func (po *PerformanceOptimizer) collectCurrentMetrics(ctx context.Context) (*CurrentMetrics, error) <span class="cov8" title="1">{
+        metrics := &amp;CurrentMetrics{}
+
+        var wg sync.WaitGroup
+        var mu sync.Mutex
+        var collectError error
+
+        // 收集内存指标
+        wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                var memStats runtime.MemStats
+                runtime.ReadMemStats(&amp;memStats)
+
+                mu.Lock()
+                metrics.MemoryMB = float64(memStats.Alloc) / 1024 / 1024
+                metrics.HeapMB = float64(memStats.HeapAlloc) / 1024 / 1024
+                metrics.GoroutineCount = runtime.NumGoroutine()
+                mu.Unlock()
+        }</span>()
+
+        // 收集CPU指标
+        <span class="cov8" title="1">wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                cpuPercents, err := cpu.PercentWithContext(ctx, time.Second, false)
+                if err != nil </span><span class="cov8" title="1">{
+                        mu.Lock()
+                        if collectError == nil </span><span class="cov8" title="1">{
+                                collectError = err
+                        }</span>
+                        <span class="cov8" title="1">mu.Unlock()
+                        return</span>
+                }
+
+                <span class="cov8" title="1">if len(cpuPercents) &gt; 0 </span><span class="cov8" title="1">{
+                        mu.Lock()
+                        metrics.CPUPercent = cpuPercents[0]
+                        mu.Unlock()
+                }</span>
+        }()
+
+        // 收集系统内存指标
+        <span class="cov8" title="1">wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer wg.Done()
+                vmem, err := mem.VirtualMemoryWithContext(ctx)
+                if err != nil </span><span class="cov0" title="0">{
+                        mu.Lock()
+                        if collectError == nil </span><span class="cov0" title="0">{
+                                collectError = err
+                        }</span>
+                        <span class="cov0" title="0">mu.Unlock()
+                        return</span>
+                }
+
+                <span class="cov8" title="1">mu.Lock()
+                metrics.SystemMemoryPercent = vmem.UsedPercent
+                mu.Unlock()</span>
+        }()
+
+        // 等待所有收集任务完成或超时
+        <span class="cov8" title="1">done := make(chan struct{})
+        go func() </span><span class="cov8" title="1">{
+                wg.Wait()
+                close(done)
+        }</span>()
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1"></span>
+                // 所有任务完成
+        case &lt;-ctx.Done():<span class="cov8" title="1">
+                return nil, fmt.Errorf("收集指标超时")</span>
+        }
+
+        <span class="cov8" title="1">if collectError != nil </span><span class="cov0" title="0">{
+                return nil, collectError
+        }</span>
+
+        <span class="cov8" title="1">return metrics, nil</span>
+}
+
+// CurrentMetrics 当前指标
+type CurrentMetrics struct {
+        MemoryMB            float64
+        HeapMB              float64
+        CPUPercent          float64
+        GoroutineCount      int
+        SystemMemoryPercent float64
+}
+
+// optimizeMemory 优化内存
+func (po *PerformanceOptimizer) optimizeMemory(ctx context.Context, metrics *CurrentMetrics) OptimizationAction <span class="cov8" title="1">{
+        action := OptimizationAction{
+                Type:        "memory_optimization",
+                Description: "内存优化",
+                Parameters:  make(map[string]interface{}),
+                Timestamp:   time.Now(),
+        }
+
+        beforeMB := metrics.MemoryMB
+
+        // 强制垃圾回收
+        runtime.GC()
+
+        // 释放未使用的内存给操作系统
+        debug.FreeOSMemory()
+
+        // 收集优化后的内存使用
+        var memStats runtime.MemStats
+        runtime.ReadMemStats(&amp;memStats)
+        afterMB := float64(memStats.Alloc) / 1024 / 1024
+
+        savedMB := beforeMB - afterMB
+        action.Parameters["before_mb"] = beforeMB
+        action.Parameters["after_mb"] = afterMB
+        action.Parameters["saved_mb"] = savedMB
+        action.Success = savedMB &gt; 0
+
+        if action.Success </span><span class="cov8" title="1">{
+                po.mu.Lock()
+                po.metrics.MemoryOptimizations++
+                po.metrics.MemorySavedMB += savedMB
+                po.mu.Unlock()
+        }</span>
+
+        <span class="cov8" title="1">return action</span>
+}
+
+// optimizeCPU 优化CPU
+func (po *PerformanceOptimizer) optimizeCPU(ctx context.Context, metrics *CurrentMetrics) OptimizationAction <span class="cov8" title="1">{
+        action := OptimizationAction{
+                Type:        "cpu_optimization",
+                Description: "CPU优化",
+                Parameters:  make(map[string]interface{}),
+                Timestamp:   time.Now(),
+        }
+
+        beforePercent := metrics.CPUPercent
+
+        // 调整GOMAXPROCS（如果配置了CPU配额）
+        if po.config.CPUQuotaPercent &gt; 0 </span><span class="cov0" title="0">{
+                maxProcs := runtime.GOMAXPROCS(0)
+                targetProcs := int(float64(maxProcs) * po.config.CPUQuotaPercent / 100.0)
+                if targetProcs &lt; 1 </span><span class="cov0" title="0">{
+                        targetProcs = 1
+                }</span>
+                <span class="cov0" title="0">if targetProcs &lt; maxProcs </span><span class="cov0" title="0">{
+                        runtime.GOMAXPROCS(targetProcs)
+                        action.Parameters["max_procs_before"] = maxProcs
+                        action.Parameters["max_procs_after"] = targetProcs
+                        action.Success = true
+                }</span>
+        }
+
+        // 触发调度器让出CPU
+        <span class="cov8" title="1">runtime.Gosched()
+
+        action.Parameters["before_percent"] = beforePercent
+
+        if action.Success </span><span class="cov0" title="0">{
+                po.mu.Lock()
+                po.metrics.CPUOptimizations++
+                po.mu.Unlock()
+        }</span>
+
+        <span class="cov8" title="1">return action</span>
+}
+
+// optimizeGC 优化垃圾回收
+func (po *PerformanceOptimizer) optimizeGC(ctx context.Context, metrics *CurrentMetrics) OptimizationAction <span class="cov8" title="1">{
+        action := OptimizationAction{
+                Type:        "gc_optimization",
+                Description: "垃圾回收优化",
+                Parameters:  make(map[string]interface{}),
+                Timestamp:   time.Now(),
+        }
+
+        var beforeStats runtime.MemStats
+        runtime.ReadMemStats(&amp;beforeStats)
+
+        // 调整GC目标百分比
+        oldGCPercent := debug.SetGCPercent(po.config.GCTargetPercent)
+
+        // 强制执行GC
+        runtime.GC()
+
+        var afterStats runtime.MemStats
+        runtime.ReadMemStats(&amp;afterStats)
+
+        pauseReduced := float64(beforeStats.PauseNs[(beforeStats.NumGC+255)%256]-afterStats.PauseNs[(afterStats.NumGC+255)%256]) / 1e6
+
+        action.Parameters["gc_percent_before"] = oldGCPercent
+        action.Parameters["gc_percent_after"] = po.config.GCTargetPercent
+        action.Parameters["pause_reduced_ms"] = pauseReduced
+        action.Parameters["gc_count_before"] = beforeStats.NumGC
+        action.Parameters["gc_count_after"] = afterStats.NumGC
+        action.Success = true
+
+        po.mu.Lock()
+        po.metrics.GCOptimizations++
+        if pauseReduced &gt; 0 </span><span class="cov8" title="1">{
+                po.metrics.GCPauseReduced += pauseReduced
+        }</span>
+        <span class="cov8" title="1">po.mu.Unlock()
+
+        return action</span>
+}
+
+// optimizeGoroutines 优化协程
+func (po *PerformanceOptimizer) optimizeGoroutines(ctx context.Context, metrics *CurrentMetrics) OptimizationAction <span class="cov8" title="1">{
+        action := OptimizationAction{
+                Type:        "goroutine_optimization",
+                Description: "协程优化",
+                Parameters:  make(map[string]interface{}),
+                Timestamp:   time.Now(),
+        }
+
+        beforeCount := metrics.GoroutineCount
+
+        // 触发调度器，让空闲的协程有机会退出
+        runtime.Gosched()
+        runtime.GC() // GC可能会清理一些协程相关的资源
+
+        afterCount := runtime.NumGoroutine()
+        reduced := beforeCount - afterCount
+
+        action.Parameters["before_count"] = beforeCount
+        action.Parameters["after_count"] = afterCount
+        action.Parameters["reduced_count"] = reduced
+        action.Success = reduced &gt; 0
+
+        return action
+}</span>
+
+// updateOptimizationStats 更新优化统计
+func (po *PerformanceOptimizer) updateOptimizationStats(actions []OptimizationAction) <span class="cov8" title="1">{
+        po.mu.Lock()
+        defer po.mu.Unlock()
+
+        successfulActions := 0
+        for _, action := range actions </span><span class="cov8" title="1">{
+                if action.Success </span><span class="cov8" title="1">{
+                        successfulActions++
+                }</span>
+        }
+
+        <span class="cov8" title="1">if successfulActions &gt; 0 </span><span class="cov8" title="1">{
+                po.metrics.TotalOptimizations++
+                po.metrics.LastOptimizationTime = time.Now()
+                po.lastOptimization = time.Now()
+                po.optimizationCount++
+        }</span>
+}
+
+// checkOptimizationAlerts 检查优化告警
+func (po *PerformanceOptimizer) checkOptimizationAlerts(metrics *CurrentMetrics, actions []OptimizationAction) <span class="cov8" title="1">{
+        alerts := make([]OptimizationAlert, 0)
+
+        // 检查内存使用告警
+        if metrics.MemoryMB &gt; po.config.MemoryThresholdMB </span><span class="cov8" title="1">{
+                alert := OptimizationAlert{
+                        ID:        fmt.Sprintf("memory_high_%d", time.Now().Unix()),
+                        Type:      "memory_usage",
+                        Severity:  "warning",
+                        Message:   fmt.Sprintf("内存使用过高: %.2f MB", metrics.MemoryMB),
+                        Action:    "memory_optimization",
+                        Value:     metrics.MemoryMB,
+                        Threshold: po.config.MemoryThresholdMB,
+                        Timestamp: time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 检查CPU使用告警
+        <span class="cov8" title="1">if metrics.CPUPercent &gt; po.config.CPUThresholdPercent </span><span class="cov8" title="1">{
+                alert := OptimizationAlert{
+                        ID:        fmt.Sprintf("cpu_high_%d", time.Now().Unix()),
+                        Type:      "cpu_usage",
+                        Severity:  "warning",
+                        Message:   fmt.Sprintf("CPU使用过高: %.2f%%", metrics.CPUPercent),
+                        Action:    "cpu_optimization",
+                        Value:     metrics.CPUPercent,
+                        Threshold: po.config.CPUThresholdPercent,
+                        Timestamp: time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 检查协程数量告警
+        <span class="cov8" title="1">if metrics.GoroutineCount &gt; po.config.GoroutineThreshold </span><span class="cov8" title="1">{
+                alert := OptimizationAlert{
+                        ID:        fmt.Sprintf("goroutine_high_%d", time.Now().Unix()),
+                        Type:      "goroutine_count",
+                        Severity:  "warning",
+                        Message:   fmt.Sprintf("协程数量过多: %d", metrics.GoroutineCount),
+                        Action:    "goroutine_optimization",
+                        Value:     float64(metrics.GoroutineCount),
+                        Threshold: float64(po.config.GoroutineThreshold),
+                        Timestamp: time.Now(),
+                }
+                alerts = append(alerts, alert)
+        }</span>
+
+        // 发送告警
+        <span class="cov8" title="1">for _, alert := range alerts </span><span class="cov8" title="1">{
+                select </span>{
+                case po.alertChan &lt;- alert:<span class="cov8" title="1"></span>
+                default:<span class="cov0" title="0"></span>
+                        // 告警通道满了，丢弃告警
+                }
+        }
+}
+
+// GetMetrics 获取优化指标
+func (po *PerformanceOptimizer) GetMetrics() OptimizationMetrics <span class="cov8" title="1">{
+        po.mu.RLock()
+        defer po.mu.RUnlock()
+        return po.metrics
+}</span>
+
+// GetAlertChannel 获取告警通道
+func (po *PerformanceOptimizer) GetAlertChannel() &lt;-chan OptimizationAlert <span class="cov8" title="1">{
+        return po.alertChan
+}</span>
+
+// GetErrorChannel 获取错误通道
+func (po *PerformanceOptimizer) GetErrorChannel() &lt;-chan error <span class="cov8" title="1">{
+        return po.errorChan
+}</span>
+
+// IsRunning 检查是否正在运行
+func (po *PerformanceOptimizer) IsRunning() bool <span class="cov8" title="1">{
+        po.mu.RLock()
+        defer po.mu.RUnlock()
+        return po.isRunning
+}</span>
+
+// ForceOptimization 强制执行优化
+func (po *PerformanceOptimizer) ForceOptimization() error <span class="cov8" title="1">{
+        if !po.isRunning </span><span class="cov8" title="1">{
+                return fmt.Errorf("性能优化器未运行")
+        }</span>
+
+        <span class="cov8" title="1">ctx, cancel := context.WithTimeout(po.ctx, po.config.Timeout)
+        defer cancel()
+
+        po.performOptimization(ctx)
+        return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">/*
+* @Author: Lzww0608
+* @Date: 2025-05-29 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-05-29 10:00:00
+* @Description: 任务管理器的核心实现，提供任务创建、执行、监控等功能
+ */
+
+package task
+
+import (
+        "context"
+        "encoding/json"
+        "os"
+        "path/filepath"
+        "sync"
+        "time"
+
+        "github.com/google/uuid"
+        "github.com/pkg/errors"
+        "go.uber.org/zap"
+)
+
+// TaskStatus 表示任务状态
+type TaskStatus string
+
+const (
+        TaskStatusPending   TaskStatus = "pending"
+        TaskStatusRunning   TaskStatus = "running"
+        TaskStatusComplete  TaskStatus = "complete"
+        TaskStatusFailed    TaskStatus = "failed"
+        TaskStatusCancelled TaskStatus = "cancelled"
+)
+
+// Task 表示一个后台任务
+type Task struct {
+        ID          string      `json:"id"`
+        Name        string      `json:"name"`
+        Description string      `json:"description"`
+        Status      TaskStatus  `json:"status"`
+        Progress    float64     `json:"progress"`
+        Result      string      `json:"result"`
+        Error       string      `json:"error,omitempty"`
+        CreatedAt   time.Time   `json:"created_at"`
+        StartedAt   *time.Time  `json:"started_at,omitempty"`
+        FinishedAt  *time.Time  `json:"finished_at,omitempty"`
+        Metadata    interface{} `json:"metadata,omitempty"`
+}
+
+// TaskManager 管理后台任务
+type TaskManager struct {
+        mu          sync.RWMutex
+        tasks       map[string]*Task
+        subscribers map[string][]chan *Task
+        logger      *zap.Logger
+        storePath   string
+}
+
+// NewTaskManager 创建任务管理器
+func NewTaskManager(logger *zap.Logger, storePath string) (*TaskManager, error) <span class="cov8" title="1">{
+        if err := os.MkdirAll(filepath.Dir(storePath), 0755); err != nil </span><span class="cov0" title="0">{
+                return nil, errors.Wrap(err, "创建存储目录失败")
+        }</span>
+
+        <span class="cov8" title="1">tm := &amp;TaskManager{
+                tasks:       make(map[string]*Task),
+                subscribers: make(map[string][]chan *Task),
+                logger:      logger,
+                storePath:   storePath,
+        }
+
+        // 加载持久化的任务
+        if err := tm.loadTasks(); err != nil </span><span class="cov0" title="0">{
+                return nil, errors.Wrap(err, "加载任务失败")
+        }</span>
+
+        // 启动定期保存
+        <span class="cov8" title="1">go tm.periodicSave()
+
+        return tm, nil</span>
+}
+
+// CreateTask 创建新任务
+func (tm *TaskManager) CreateTask(name, description string, metadata interface{}) (*Task, error) <span class="cov8" title="1">{
+        task := &amp;Task{
+                ID:          uuid.New().String(),
+                Name:        name,
+                Description: description,
+                Status:      TaskStatusPending,
+                CreatedAt:   time.Now(),
+                Metadata:    metadata,
+        }
+
+        tm.mu.Lock()
+        tm.tasks[task.ID] = task
+        tm.mu.Unlock()
+
+        tm.notifySubscribers(task)
+        return task, tm.saveTasks()
+}</span>
+
+// StartTask 启动任务
+func (tm *TaskManager) StartTask(ctx context.Context, taskID string, fn func(context.Context, *Task) error) error <span class="cov8" title="1">{
+        // 获取并更新任务状态，使用锁保护
+        tm.mu.Lock()
+        task, ok := tm.tasks[taskID]
+        if !ok </span><span class="cov0" title="0">{
+                tm.mu.Unlock()
+                return errors.New("任务不存在")
+        }</span>
+
+        <span class="cov8" title="1">if task.Status != TaskStatusPending </span><span class="cov0" title="0">{
+                tm.mu.Unlock()
+                return errors.New("任务状态不正确")
+        }</span>
+
+        // 更新任务状态
+        <span class="cov8" title="1">now := time.Now()
+        task.Status = TaskStatusRunning
+        task.StartedAt = &amp;now
+        task.Progress = 0.0 // 确保进度初始化为0
+
+        // 创建任务副本，避免并发修改
+        taskCopy := *task
+        tm.mu.Unlock()
+
+        // 通知订阅者
+        tm.notifySubscribers(task)
+
+        // 在后台执行任务
+        go func() </span><span class="cov8" title="1">{
+                // 使用任务副本调用执行函数
+                err := fn(ctx, &amp;taskCopy)
+
+                // 任务完成后，更新原始任务的状态
+                tm.mu.Lock()
+                // 重新获取任务，确保更新的是最新状态
+                task, ok := tm.tasks[taskID]
+                if !ok </span><span class="cov0" title="0">{
+                        tm.mu.Unlock()
+                        if tm.logger != nil </span><span class="cov0" title="0">{
+                                tm.logger.Error("任务完成后未找到任务", zap.String("task_id", taskID))
+                        }</span>
+                        <span class="cov0" title="0">return</span>
+                }
+
+                <span class="cov8" title="1">now := time.Now()
+                task.FinishedAt = &amp;now
+                if err != nil </span><span class="cov8" title="1">{
+                        task.Status = TaskStatusFailed
+                        task.Error = err.Error()
+                }</span> else<span class="cov8" title="1"> {
+                        task.Status = TaskStatusComplete
+                        task.Progress = 1.0 // 确保进度设为100%
+                }</span>
+                <span class="cov8" title="1">tm.mu.Unlock()
+
+                tm.notifySubscribers(task)
+                tm.saveTasks()</span>
+        }()
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// UpdateTaskProgress 更新任务进度
+func (tm *TaskManager) UpdateTaskProgress(taskID string, progress float64) error <span class="cov8" title="1">{
+        // 使用读写锁保护对任务的访问
+        tm.mu.Lock()
+        task, ok := tm.tasks[taskID]
+        if !ok </span><span class="cov0" title="0">{
+                tm.mu.Unlock()
+                return errors.New("任务不存在")
+        }</span>
+
+        // 确保进度在有效范围内
+        <span class="cov8" title="1">if progress &lt; 0 </span><span class="cov0" title="0">{
+                progress = 0
+        }</span> else<span class="cov8" title="1"> if progress &gt; 1 </span><span class="cov0" title="0">{
+                progress = 1
+        }</span>
+
+        // 只有在运行状态才能更新进度
+        <span class="cov8" title="1">if task.Status != TaskStatusRunning </span><span class="cov0" title="0">{
+                tm.mu.Unlock()
+                return errors.New("任务不在运行状态，无法更新进度")
+        }</span>
+
+        // 更新进度
+        <span class="cov8" title="1">task.Progress = progress
+
+        // 创建任务副本用于通知
+        taskCopy := *task
+        tm.mu.Unlock()
+
+        // 通知订阅者（使用任务副本）
+        tm.notifySubscribers(&amp;taskCopy)
+        return nil</span>
+}
+
+// CancelTask 取消任务
+func (tm *TaskManager) CancelTask(taskID string) error <span class="cov8" title="1">{
+        tm.mu.Lock()
+
+        task, ok := tm.tasks[taskID]
+        if !ok </span><span class="cov0" title="0">{
+                tm.mu.Unlock()
+                return errors.New("任务不存在")
+        }</span>
+
+        <span class="cov8" title="1">if task.Status != TaskStatusRunning &amp;&amp; task.Status != TaskStatusPending </span><span class="cov0" title="0">{
+                tm.mu.Unlock()
+                return errors.New("任务无法取消")
+        }</span>
+
+        <span class="cov8" title="1">now := time.Now()
+        task.Status = TaskStatusCancelled
+        task.FinishedAt = &amp;now
+
+        // 创建任务副本用于通知
+        taskCopy := *task
+
+        // 解锁，避免在持有写锁的情况下调用saveTasks
+        tm.mu.Unlock()
+
+        // 在解锁后保存任务和通知订阅者
+        err := tm.saveTasks()
+        tm.notifySubscribers(&amp;taskCopy)
+
+        return err</span>
+}
+
+// GetTask 获取任务信息
+func (tm *TaskManager) GetTask(taskID string) (*Task, error) <span class="cov8" title="1">{
+        tm.mu.RLock()
+        defer tm.mu.RUnlock()
+
+        task, ok := tm.tasks[taskID]
+        if !ok </span><span class="cov8" title="1">{
+                return nil, errors.New("任务不存在")
+        }</span>
+
+        // 返回任务副本，避免外部修改影响内部状态
+        <span class="cov8" title="1">taskCopy := *task
+        return &amp;taskCopy, nil</span>
+}
+
+// ListTasks 列出所有任务
+func (tm *TaskManager) ListTasks() []*Task <span class="cov8" title="1">{
+        tm.mu.RLock()
+        defer tm.mu.RUnlock()
+
+        tasks := make([]*Task, 0, len(tm.tasks))
+        for _, task := range tm.tasks </span><span class="cov8" title="1">{
+                // 创建任务副本
+                taskCopy := *task
+                tasks = append(tasks, &amp;taskCopy)
+        }</span>
+        <span class="cov8" title="1">return tasks</span>
+}
+
+// SubscribeTask 订阅任务更新
+func (tm *TaskManager) SubscribeTask(taskID string) chan *Task <span class="cov8" title="1">{
+        ch := make(chan *Task, 10)
+        tm.mu.Lock()
+        tm.subscribers[taskID] = append(tm.subscribers[taskID], ch)
+        tm.mu.Unlock()
+
+        // 立即发送当前状态
+        task, err := tm.GetTask(taskID)
+        if err == nil </span><span class="cov8" title="1">{
+                select </span>{
+                case ch &lt;- task:<span class="cov8" title="1"></span>
+                        // 成功发送
+                default:<span class="cov0" title="0"></span>
+                        // 如果通道已满，忽略
+                }
+        }
+
+        <span class="cov8" title="1">return ch</span>
+}
+
+// UnsubscribeTask 取消订阅任务更新
+func (tm *TaskManager) UnsubscribeTask(taskID string, ch chan *Task) <span class="cov8" title="1">{
+        tm.mu.Lock()
+        defer tm.mu.Unlock()
+
+        subs := tm.subscribers[taskID]
+        for i, sub := range subs </span><span class="cov8" title="1">{
+                if sub == ch </span><span class="cov8" title="1">{
+                        tm.subscribers[taskID] = append(subs[:i], subs[i+1:]...)
+                        close(sub)
+                        break</span>
+                }
+        }
+}
+
+// notifySubscribers 通知订阅者
+func (tm *TaskManager) notifySubscribers(task *Task) <span class="cov8" title="1">{
+        tm.mu.RLock()
+        subs := tm.subscribers[task.ID]
+        // 创建一个任务副本，防止并发修改导致的问题
+        taskCopy := *task
+        tm.mu.RUnlock()
+
+        for _, ch := range subs </span><span class="cov8" title="1">{
+                select </span>{
+                case ch &lt;- &amp;taskCopy:<span class="cov8" title="1"></span>
+                        // 成功发送
+                default:<span class="cov0" title="0">
+                        // 如果通道已满，记录日志但不阻塞
+                        if tm.logger != nil </span><span class="cov0" title="0">{
+                                tm.logger.Warn("通知订阅者失败：通道已满", zap.String("task_id", task.ID))
+                        }</span>
+                }
+        }
+}
+
+// loadTasks 从文件加载任务
+func (tm *TaskManager) loadTasks() error <span class="cov8" title="1">{
+        data, err := os.ReadFile(tm.storePath)
+        if os.IsNotExist(err) </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, "读取任务文件失败")
+        }</span>
+
+        <span class="cov8" title="1">var tasks map[string]*Task
+        if err := json.Unmarshal(data, &amp;tasks); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, "解析任务数据失败")
+        }</span>
+
+        <span class="cov8" title="1">tm.mu.Lock()
+        tm.tasks = tasks
+        tm.mu.Unlock()
+
+        return nil</span>
+}
+
+// saveTasks 保存任务到文件
+func (tm *TaskManager) saveTasks() error <span class="cov8" title="1">{
+        // 首先创建任务的一个深拷贝
+        tm.mu.RLock()
+        tasksCopy := make(map[string]*Task, len(tm.tasks))
+        for id, task := range tm.tasks </span><span class="cov8" title="1">{
+                taskCopy := *task
+                tasksCopy[id] = &amp;taskCopy
+        }</span>
+        <span class="cov8" title="1">tm.mu.RUnlock()
+
+        // 在不持有锁的情况下进行序列化
+        data, err := json.MarshalIndent(tasksCopy, "", "  ")
+        if err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, "序列化任务数据失败")
+        }</span>
+
+        <span class="cov8" title="1">if err := os.WriteFile(tm.storePath, data, 0644); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, "写入任务文件失败")
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// periodicSave 定期保存任务状态
+func (tm *TaskManager) periodicSave() <span class="cov8" title="1">{
+        ticker := time.NewTicker(1 * time.Minute)
+        defer ticker.Stop()
+
+        for range ticker.C </span><span class="cov0" title="0">{
+                if err := tm.saveTasks(); err != nil </span><span class="cov0" title="0">{
+                        tm.logger.Error("保存任务状态失败", zap.Error(err))
+                }</span>
+        }
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
