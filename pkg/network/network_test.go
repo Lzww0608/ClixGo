@@ -9,6 +9,7 @@
 package network
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -650,33 +651,69 @@ func TestAnalyzePerformance(t *testing.T) {
 
 // TestCheckSSL 测试SSL证书检查功能
 func TestCheckSSL(t *testing.T) {
-	// 测试有效的HTTPS站点
-	// 注意：这个测试可能失败，因为我们使用真实的外部服务
-	info, err := CheckSSL("google.com")
-	if err != nil {
-		t.Logf("CheckSSL返回错误: %v", err)
+	// 创建带超时的上下文
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 使用goroutine和channel来实现超时控制
+	type result struct {
+		info *SSLInfo
+		err  error
+	}
+
+	resultChan := make(chan result, 1)
+	go func() {
+		// 测试有效的HTTPS站点
+		info, err := CheckSSL("google.com")
+		resultChan <- result{info: info, err: err}
+	}()
+
+	select {
+	case res := <-resultChan:
+		if res.err != nil {
+			t.Logf("CheckSSL返回错误: %v", res.err)
+			// 对于网络错误，我们记录但不失败测试
+			return
+		}
+
+		if res.info == nil {
+			t.Fatal("CheckSSL返回nil结果")
+		}
+
+		// 验证证书信息
+		if res.info.Issuer == "" {
+			t.Error("证书颁发者不应该为空")
+		}
+
+		if res.info.Expiry.IsZero() {
+			t.Error("证书过期时间不应该为零")
+		}
+
+		t.Logf("SSL证书信息: 颁发者=%s, 过期时间=%v", res.info.Issuer, res.info.Expiry)
+
+	case <-ctx.Done():
+		t.Log("SSL测试超时，这可能是由于网络连接问题")
+		// 不将超时作为失败，因为这可能是网络环境问题
 		return
 	}
 
-	if info == nil {
-		t.Fatal("CheckSSL返回nil结果")
-	}
+	// 测试无效站点（也需要超时控制）
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel2()
 
-	// 验证证书信息
-	if info.Issuer == "" {
-		t.Error("证书颁发者不应该为空")
-	}
+	invalidResultChan := make(chan result, 1)
+	go func() {
+		_, err := CheckSSL("invalid.domain.example")
+		invalidResultChan <- result{err: err}
+	}()
 
-	if info.Expiry.IsZero() {
-		t.Error("证书过期时间不应该为零")
-	}
-
-	t.Logf("SSL证书信息: 颁发者=%s, 过期时间=%v", info.Issuer, info.Expiry)
-
-	// 测试无效站点
-	_, err = CheckSSL("invalid.domain.example")
-	if err == nil {
-		t.Error("CheckSSL应该对无效站点返回错误")
+	select {
+	case res := <-invalidResultChan:
+		if res.err == nil {
+			t.Error("CheckSSL应该对无效站点返回错误")
+		}
+	case <-ctx2.Done():
+		t.Log("无效站点SSL测试超时，这是预期的")
 	}
 }
 

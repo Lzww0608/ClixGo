@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-5-31 22:32:23
 * @Description: 实时网络监控功能的核心实现
  */
 
@@ -197,7 +197,7 @@ func (m *RealtimeNetworkMonitor) Start() error {
 	return nil
 }
 
-// Stop 停止实时监控
+// Stop 停止监控
 func (m *RealtimeNetworkMonitor) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -207,27 +207,10 @@ func (m *RealtimeNetworkMonitor) Stop() error {
 	}
 
 	m.isRunning = false
-
-	// 先取消上下文，让监控循环退出
 	m.cancel()
 
-	// 等待一小段时间让监控循环完全退出
-	time.Sleep(50 * time.Millisecond)
-
-	// 安全地关闭通道
-	select {
-	case <-m.updateChan:
-		// 清空通道
-	default:
-	}
-	close(m.updateChan)
-
-	select {
-	case <-m.errorChan:
-		// 清空通道
-	default:
-	}
-	close(m.errorChan)
+	// 不显式关闭通道，让垃圾回收器处理
+	// 这避免了竞态条件，因为通道仍然可以接收数据，只是没有人会读取
 
 	return nil
 }
@@ -324,8 +307,26 @@ func (m *RealtimeNetworkMonitor) collectSnapshot(ctx context.Context) (NetworkRe
 		Alerts:          make([]Alert, 0),
 	}
 
+	// 使用独立的容器来收集各种数据，避免并发访问问题
+	type dataContainer struct {
+		mu               sync.Mutex
+		interfaces       map[string]InterfaceStats
+		connections      ConnectionSummary
+		targetLatencies  map[string]LatencyStats
+		systemResources  SystemNetworkResources
+		interfacesReady  bool
+		connectionsReady bool
+		latenciesReady   bool
+		resourcesReady   bool
+	}
+
+	container := &dataContainer{
+		interfaces:      make(map[string]InterfaceStats),
+		targetLatencies: make(map[string]LatencyStats),
+	}
+
 	var wg sync.WaitGroup
-	var mu sync.Mutex
+	var errorMu sync.Mutex
 	errors := make([]error, 0)
 
 	// 并发收集各种数据，使用超时防止死锁
@@ -336,14 +337,15 @@ func (m *RealtimeNetworkMonitor) collectSnapshot(ctx context.Context) (NetworkRe
 		defer wg.Done()
 		interfaces, err := m.collectInterfaceStats(ctx)
 		if err != nil {
-			mu.Lock()
+			errorMu.Lock()
 			errors = append(errors, fmt.Errorf("收集接口统计失败: %w", err))
-			mu.Unlock()
+			errorMu.Unlock()
 			return
 		}
-		mu.Lock()
-		snapshot.Interfaces = interfaces
-		mu.Unlock()
+		container.mu.Lock()
+		container.interfaces = interfaces
+		container.interfacesReady = true
+		container.mu.Unlock()
 	}()
 
 	// 收集连接信息
@@ -352,14 +354,15 @@ func (m *RealtimeNetworkMonitor) collectSnapshot(ctx context.Context) (NetworkRe
 		defer wg.Done()
 		connections, err := m.collectConnectionStats(ctx)
 		if err != nil {
-			mu.Lock()
+			errorMu.Lock()
 			errors = append(errors, fmt.Errorf("收集连接统计失败: %w", err))
-			mu.Unlock()
+			errorMu.Unlock()
 			return
 		}
-		mu.Lock()
-		snapshot.Connections = connections
-		mu.Unlock()
+		container.mu.Lock()
+		container.connections = connections
+		container.connectionsReady = true
+		container.mu.Unlock()
 	}()
 
 	// 收集目标延迟信息
@@ -369,14 +372,15 @@ func (m *RealtimeNetworkMonitor) collectSnapshot(ctx context.Context) (NetworkRe
 			defer wg.Done()
 			latencies, err := m.collectTargetLatencies(ctx)
 			if err != nil {
-				mu.Lock()
+				errorMu.Lock()
 				errors = append(errors, fmt.Errorf("收集延迟统计失败: %w", err))
-				mu.Unlock()
+				errorMu.Unlock()
 				return
 			}
-			mu.Lock()
-			snapshot.TargetLatencies = latencies
-			mu.Unlock()
+			container.mu.Lock()
+			container.targetLatencies = latencies
+			container.latenciesReady = true
+			container.mu.Unlock()
 		}()
 	}
 
@@ -386,14 +390,15 @@ func (m *RealtimeNetworkMonitor) collectSnapshot(ctx context.Context) (NetworkRe
 		defer wg.Done()
 		resources, err := m.collectSystemResources(ctx)
 		if err != nil {
-			mu.Lock()
+			errorMu.Lock()
 			errors = append(errors, fmt.Errorf("收集系统资源失败: %w", err))
-			mu.Unlock()
+			errorMu.Unlock()
 			return
 		}
-		mu.Lock()
-		snapshot.SystemResources = resources
-		mu.Unlock()
+		container.mu.Lock()
+		container.systemResources = resources
+		container.resourcesReady = true
+		container.mu.Unlock()
 	}()
 
 	// 等待所有收集任务完成或超时
@@ -405,7 +410,21 @@ func (m *RealtimeNetworkMonitor) collectSnapshot(ctx context.Context) (NetworkRe
 
 	select {
 	case <-done:
-		// 所有任务完成
+		// 所有任务完成，安全地复制数据到结果中
+		container.mu.Lock()
+		if container.interfacesReady {
+			snapshot.Interfaces = container.interfaces
+		}
+		if container.connectionsReady {
+			snapshot.Connections = container.connections
+		}
+		if container.latenciesReady {
+			snapshot.TargetLatencies = container.targetLatencies
+		}
+		if container.resourcesReady {
+			snapshot.SystemResources = container.systemResources
+		}
+		container.mu.Unlock()
 	case <-ctx.Done():
 		return snapshot, fmt.Errorf("数据收集超时")
 	}
@@ -473,8 +492,12 @@ func (m *RealtimeNetworkMonitor) collectInterfaceStats(ctx context.Context) (map
 		}
 
 		// 计算带宽使用率
-		if m.lastSnapshot != nil {
-			if lastStats, exists := m.lastSnapshot.Interfaces[iface.Name]; exists {
+		m.mu.RLock()
+		lastSnapshot := m.lastSnapshot
+		m.mu.RUnlock()
+
+		if lastSnapshot != nil {
+			if lastStats, exists := lastSnapshot.Interfaces[iface.Name]; exists {
 				timeDiff := stats.LastUpdate.Sub(lastStats.LastUpdate).Seconds()
 				if timeDiff > 0 {
 					bytesDiffIn := float64(stats.BytesIn - lastStats.BytesIn)

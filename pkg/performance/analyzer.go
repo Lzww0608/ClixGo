@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-5-31 22:15:40
 * @Description: 性能分析器的核心实现
  */
 
@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -24,6 +25,7 @@ import (
 type TaskPerformanceAnalyzer struct {
 	mu             sync.RWMutex
 	isRunning      bool
+	isStopping     bool
 	ctx            context.Context
 	cancel         context.CancelFunc
 	config         AnalyzerConfig
@@ -32,6 +34,20 @@ type TaskPerformanceAnalyzer struct {
 	updateChan     chan TaskMetrics
 	errorChan      chan error
 	alertChan      chan PerformanceAlert
+
+	// 添加goroutine管理
+	activeGoroutines sync.WaitGroup
+
+	// 内部通道，用于安全发送
+	internalUpdateChan chan TaskMetrics
+	internalErrorChan  chan error
+	internalAlertChan  chan PerformanceAlert
+
+	// 原子标志防止向已关闭通道发送数据
+	channelsClosed int32 // 0: 开放, 1: 已关闭
+
+	// 确保通道只关闭一次
+	closeOnce sync.Once
 }
 
 // AnalyzerConfig 性能分析器配置
@@ -146,13 +162,16 @@ func NewTaskPerformanceAnalyzer(config AnalyzerConfig) *TaskPerformanceAnalyzer 
 	}
 
 	analyzer := &TaskPerformanceAnalyzer{
-		ctx:        ctx,
-		cancel:     cancel,
-		config:     config,
-		metrics:    make(map[string]*TaskMetrics),
-		updateChan: make(chan TaskMetrics, 100),
-		errorChan:  make(chan error, 10),
-		alertChan:  make(chan PerformanceAlert, 50),
+		ctx:                ctx,
+		cancel:             cancel,
+		config:             config,
+		metrics:            make(map[string]*TaskMetrics),
+		updateChan:         make(chan TaskMetrics, 100),
+		errorChan:          make(chan error, 10),
+		alertChan:          make(chan PerformanceAlert, 50),
+		internalUpdateChan: make(chan TaskMetrics, 100),
+		internalErrorChan:  make(chan error, 10),
+		internalAlertChan:  make(chan PerformanceAlert, 50),
 	}
 
 	return analyzer
@@ -168,40 +187,76 @@ func (tpa *TaskPerformanceAnalyzer) Start() error {
 	}
 
 	tpa.isRunning = true
+	tpa.isStopping = false
 
-	// 收集系统基线指标
-	go tpa.collectSystemBaseline()
+	// 启动通道转发goroutine
+	tpa.activeGoroutines.Add(1)
+	go func() {
+		defer tpa.activeGoroutines.Done()
+		tpa.channelForwarder()
+	}()
+
+	// 收集系统基线指标，使用WaitGroup跟踪
+	tpa.activeGoroutines.Add(1)
+	go func() {
+		defer tpa.activeGoroutines.Done()
+		tpa.collectSystemBaseline()
+	}()
 
 	return nil
 }
 
-// Stop 停止性能分析器
+// Stop 停止性能分析器（简化版本，避免竞态条件）
 func (tpa *TaskPerformanceAnalyzer) Stop() error {
+	// 首先设置原子标志，防止向通道发送新数据
+	atomic.StoreInt32(&tpa.channelsClosed, 1)
+
 	tpa.mu.Lock()
-	defer tpa.mu.Unlock()
 
 	if !tpa.isRunning {
+		tpa.mu.Unlock()
 		return fmt.Errorf("性能分析器未在运行")
 	}
 
+	// 标记为正在停止，防止新的goroutine启动
+	tpa.isStopping = true
 	tpa.isRunning = false
+
+	// 取消上下文，通知所有goroutine停止
 	tpa.cancel()
 
-	// 等待一小段时间让协程退出
-	time.Sleep(100 * time.Millisecond)
+	tpa.mu.Unlock()
 
-	// 安全关闭通道
-	close(tpa.updateChan)
-	close(tpa.errorChan)
-	close(tpa.alertChan)
+	// 等待所有活跃的goroutine退出
+	// 使用超时防止无限等待
+	done := make(chan struct{})
+	go func() {
+		tpa.activeGoroutines.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// 所有goroutine已退出
+	case <-time.After(5 * time.Second):
+		// 超时，强制继续
+	}
+
+	// 不显式关闭通道，让垃圾回收器处理
+	// 这避免了竞态条件，因为通道仍然可以接收数据，只是没有人会读取
 
 	return nil
 }
 
 // StartTaskAnalysis 开始任务性能分析
 func (tpa *TaskPerformanceAnalyzer) StartTaskAnalysis(taskID, taskName string) (*TaskExecutionContext, error) {
-	if !tpa.isRunning {
-		return nil, fmt.Errorf("性能分析器未运行")
+	tpa.mu.RLock()
+	isRunning := tpa.isRunning
+	isStopping := tpa.isStopping
+	tpa.mu.RUnlock()
+
+	if !isRunning || isStopping {
+		return nil, fmt.Errorf("性能分析器未运行或正在停止")
 	}
 
 	// 获取当前进程
@@ -209,9 +264,12 @@ func (tpa *TaskPerformanceAnalyzer) StartTaskAnalysis(taskID, taskName string) (
 	proc, err := process.NewProcess(pid)
 	if err != nil {
 		// 如果无法获取进程信息，继续但记录错误
-		select {
-		case tpa.errorChan <- fmt.Errorf("获取进程信息失败: %w", err):
-		default:
+		tpa.mu.RLock()
+		isRunning = tpa.isRunning
+		tpa.mu.RUnlock()
+
+		if isRunning {
+			tpa.safeSendError(fmt.Errorf("获取进程信息失败: %w", err))
 		}
 	}
 
@@ -228,8 +286,12 @@ func (tpa *TaskPerformanceAnalyzer) StartTaskAnalysis(taskID, taskName string) (
 		samples:    make([]TaskMetrics, 0),
 	}
 
-	// 启动采样协程
-	go tpa.sampleTaskMetrics(ctx)
+	// 启动采样协程，并使用WaitGroup跟踪
+	tpa.activeGoroutines.Add(1)
+	go func() {
+		defer tpa.activeGoroutines.Done()
+		tpa.sampleTaskMetrics(ctx)
+	}()
 
 	return ctx, nil
 }
@@ -260,11 +322,7 @@ func (tpa *TaskPerformanceAnalyzer) FinishTaskAnalysis(ctx *TaskExecutionContext
 	tpa.mu.RUnlock()
 
 	if isRunning {
-		select {
-		case tpa.updateChan <- finalMetrics:
-		default:
-			// 通道满了，丢弃数据
-		}
+		tpa.safeSendUpdate(finalMetrics)
 	}
 
 	// 检查告警
@@ -310,8 +368,9 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetrics(taskID, taskName strin
 	return tpa.collectCurrentMetricsWithContext(ctx, taskID, taskName)
 }
 
-// collectCurrentMetricsWithContext 带上下文收集当前指标
+// collectCurrentMetricsWithContext 使用上下文控制收集当前指标（并发安全版本）
 func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context.Context, taskID, taskName string) TaskMetrics {
+	// 创建本地指标结构体，避免并发访问问题
 	metrics := TaskMetrics{
 		TaskID:        taskID,
 		TaskName:      taskName,
@@ -319,8 +378,21 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context
 		CustomMetrics: make(map[string]interface{}),
 	}
 
+	// 使用独立的结构体来收集各种指标，避免并发访问问题
+	type metricsContainer struct {
+		mu       sync.Mutex
+		cpu      CPUMetrics
+		memory   MemoryMetrics
+		system   SystemMetrics
+		runtime  RuntimeMetrics
+		cpuReady bool
+		memReady bool
+		sysReady bool
+		rtReady  bool
+	}
+
+	container := &metricsContainer{}
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 
 	// 并发收集各种指标，使用超时防止死锁
 
@@ -328,7 +400,16 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		cpuMetrics, err := tpa.collectCPUMetrics(ctx)
+		// 检查是否正在停止
+		tpa.mu.RLock()
+		isStopping := tpa.isStopping
+		tpa.mu.RUnlock()
+
+		if isStopping {
+			return
+		}
+
+		result, err := tpa.collectCPUMetrics(ctx)
 		if err != nil {
 			// 检查分析器是否仍在运行，避免向已关闭的通道发送数据
 			tpa.mu.RLock()
@@ -336,23 +417,30 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context
 			tpa.mu.RUnlock()
 
 			if isRunning {
-				select {
-				case tpa.errorChan <- fmt.Errorf("收集CPU指标失败: %w", err):
-				default:
-				}
+				tpa.safeSendError(fmt.Errorf("收集CPU指标失败: %w", err))
 			}
 			return
 		}
-		mu.Lock()
-		metrics.CPUUsage = cpuMetrics
-		mu.Unlock()
+		container.mu.Lock()
+		container.cpu = result
+		container.cpuReady = true
+		container.mu.Unlock()
 	}()
 
 	// 收集内存指标
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		memMetrics, err := tpa.collectMemoryMetrics(ctx)
+		// 检查是否正在停止
+		tpa.mu.RLock()
+		isStopping := tpa.isStopping
+		tpa.mu.RUnlock()
+
+		if isStopping {
+			return
+		}
+
+		result, err := tpa.collectMemoryMetrics(ctx)
 		if err != nil {
 			// 检查分析器是否仍在运行，避免向已关闭的通道发送数据
 			tpa.mu.RLock()
@@ -360,23 +448,30 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context
 			tpa.mu.RUnlock()
 
 			if isRunning {
-				select {
-				case tpa.errorChan <- fmt.Errorf("收集内存指标失败: %w", err):
-				default:
-				}
+				tpa.safeSendError(fmt.Errorf("收集内存指标失败: %w", err))
 			}
 			return
 		}
-		mu.Lock()
-		metrics.MemoryUsage = memMetrics
-		mu.Unlock()
+		container.mu.Lock()
+		container.memory = result
+		container.memReady = true
+		container.mu.Unlock()
 	}()
 
 	// 收集系统指标
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sysMetrics, err := tpa.collectSystemMetrics(ctx)
+		// 检查是否正在停止
+		tpa.mu.RLock()
+		isStopping := tpa.isStopping
+		tpa.mu.RUnlock()
+
+		if isStopping {
+			return
+		}
+
+		result, err := tpa.collectSystemMetrics(ctx)
 		if err != nil {
 			// 检查分析器是否仍在运行，避免向已关闭的通道发送数据
 			tpa.mu.RLock()
@@ -384,26 +479,34 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context
 			tpa.mu.RUnlock()
 
 			if isRunning {
-				select {
-				case tpa.errorChan <- fmt.Errorf("收集系统指标失败: %w", err):
-				default:
-				}
+				tpa.safeSendError(fmt.Errorf("收集系统指标失败: %w", err))
 			}
 			return
 		}
-		mu.Lock()
-		metrics.SystemMetrics = sysMetrics
-		mu.Unlock()
+		container.mu.Lock()
+		container.system = result
+		container.sysReady = true
+		container.mu.Unlock()
 	}()
 
-	// 收集运行时指标
+	// 收集运行时指标（现在也用锁保护）
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runtimeMetrics := tpa.collectRuntimeMetrics()
-		mu.Lock()
-		metrics.RuntimeMetrics = runtimeMetrics
-		mu.Unlock()
+		// 检查是否正在停止
+		tpa.mu.RLock()
+		isStopping := tpa.isStopping
+		tpa.mu.RUnlock()
+
+		if isStopping {
+			return
+		}
+
+		result := tpa.collectRuntimeMetrics()
+		container.mu.Lock()
+		container.runtime = result
+		container.rtReady = true
+		container.mu.Unlock()
 	}()
 
 	// 等待所有收集任务完成或超时
@@ -415,7 +518,22 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context
 
 	select {
 	case <-done:
-		// 所有任务完成
+		// 所有任务完成，安全地复制数据到结果中
+		container.mu.Lock()
+		if container.cpuReady {
+			metrics.CPUUsage = container.cpu
+		}
+		if container.memReady {
+			metrics.MemoryUsage = container.memory
+		}
+		if container.sysReady {
+			metrics.SystemMetrics = container.system
+		}
+		if container.rtReady {
+			metrics.RuntimeMetrics = container.runtime
+		}
+		container.mu.Unlock()
+
 	case <-ctx.Done():
 		// 超时，返回部分数据
 		// 检查分析器是否仍在运行，避免向已关闭的通道发送数据
@@ -424,11 +542,24 @@ func (tpa *TaskPerformanceAnalyzer) collectCurrentMetricsWithContext(ctx context
 		tpa.mu.RUnlock()
 
 		if isRunning {
-			select {
-			case tpa.errorChan <- fmt.Errorf("指标收集超时"):
-			default:
-			}
+			tpa.safeSendError(fmt.Errorf("指标收集超时"))
 		}
+
+		// 即使超时，也尝试获取已收集的数据
+		container.mu.Lock()
+		if container.cpuReady {
+			metrics.CPUUsage = container.cpu
+		}
+		if container.memReady {
+			metrics.MemoryUsage = container.memory
+		}
+		if container.sysReady {
+			metrics.SystemMetrics = container.system
+		}
+		if container.rtReady {
+			metrics.RuntimeMetrics = container.runtime
+		}
+		container.mu.Unlock()
 	}
 
 	return metrics
@@ -525,10 +656,7 @@ func (tpa *TaskPerformanceAnalyzer) collectSystemBaseline() {
 
 	baseline, err := tpa.collectSystemMetrics(ctx)
 	if err != nil {
-		select {
-		case tpa.errorChan <- fmt.Errorf("收集系统基线失败: %w", err):
-		default:
-		}
+		tpa.safeSendError(fmt.Errorf("收集系统基线失败: %w", err))
 		return
 	}
 
@@ -624,11 +752,7 @@ func (tpa *TaskPerformanceAnalyzer) checkAlerts(metrics TaskMetrics) {
 
 	// 发送告警
 	for _, alert := range alerts {
-		select {
-		case tpa.alertChan <- alert:
-		default:
-			// 告警通道满了，丢弃告警
-		}
+		tpa.safeSendAlert(alert)
 	}
 }
 
@@ -682,4 +806,95 @@ func (tpa *TaskPerformanceAnalyzer) IsRunning() bool {
 	tpa.mu.RLock()
 	defer tpa.mu.RUnlock()
 	return tpa.isRunning
+}
+
+// safeSendError 安全发送错误到错误通道
+func (tpa *TaskPerformanceAnalyzer) safeSendError(err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// 捕获向已关闭通道发送数据的panic，静默忽略
+		}
+	}()
+
+	if atomic.LoadInt32(&tpa.channelsClosed) == 1 {
+		return // 通道已关闭，不发送
+	}
+
+	select {
+	case tpa.internalErrorChan <- err:
+	default:
+		// 通道满，静默丢弃
+	}
+}
+
+// safeSendUpdate 安全发送更新到更新通道
+func (tpa *TaskPerformanceAnalyzer) safeSendUpdate(metrics TaskMetrics) {
+	defer func() {
+		if r := recover(); r != nil {
+			// 捕获向已关闭通道发送数据的panic，静默忽略
+		}
+	}()
+
+	if atomic.LoadInt32(&tpa.channelsClosed) == 1 {
+		return // 通道已关闭，不发送
+	}
+
+	select {
+	case tpa.internalUpdateChan <- metrics:
+	default:
+		// 通道满，静默丢弃
+	}
+}
+
+// safeSendAlert 安全发送告警到告警通道
+func (tpa *TaskPerformanceAnalyzer) safeSendAlert(alert PerformanceAlert) {
+	defer func() {
+		if r := recover(); r != nil {
+			// 捕获向已关闭通道发送数据的panic，静默忽略
+		}
+	}()
+
+	if atomic.LoadInt32(&tpa.channelsClosed) == 1 {
+		return // 通道已关闭，不发送
+	}
+
+	select {
+	case tpa.internalAlertChan <- alert:
+	default:
+		// 通道满，静默丢弃
+	}
+}
+
+// channelForwarder 通道转发器，安全地将内部通道数据转发到外部通道
+func (tpa *TaskPerformanceAnalyzer) channelForwarder() {
+	for {
+		select {
+		case <-tpa.ctx.Done():
+			return
+		case update := <-tpa.internalUpdateChan:
+			select {
+			case tpa.updateChan <- update:
+			case <-tpa.ctx.Done():
+				return
+			default:
+				// 外部通道满，丢弃数据
+			}
+		case err := <-tpa.internalErrorChan:
+			select {
+			case tpa.errorChan <- err:
+			case <-tpa.ctx.Done():
+				return
+			default:
+				// 外部通道满，丢弃数据
+			}
+		case alert := <-tpa.internalAlertChan:
+			select {
+			case tpa.alertChan <- alert:
+			case <-tpa.ctx.Done():
+				return
+			default:
+				// 外部通道满，丢弃数据
+			}
+		}
+	}
 }
