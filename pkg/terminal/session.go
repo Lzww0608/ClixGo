@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 21:09:43
 * @Description: 终端会话管理的核心实现
  */
 
@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Lzww0608/ClixGo/pkg/errors"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -27,6 +29,9 @@ type SessionManager struct {
 
 // NewSessionManager 创建会话管理器
 func NewSessionManager(config *TerminalConfig) *SessionManager {
+	if config == nil {
+		config = DefaultConfig
+	}
 	return &SessionManager{
 		sessions: make(map[string]*Session),
 		config:   config,
@@ -35,44 +40,47 @@ func NewSessionManager(config *TerminalConfig) *SessionManager {
 
 // CreateSession 创建新会话
 func (sm *SessionManager) CreateSession(name string) (*Session, error) {
-	if name == "" {
-		name = fmt.Sprintf("session-%d", len(sm.sessions))
-	}
+	// 验证和生成会话名称
+	sessionName := sm.generateSessionName(name)
 
 	// 检查会话名是否已存在
-	for _, session := range sm.sessions {
-		if session.Name == name {
-			return nil, fmt.Errorf("session with name '%s' already exists", name)
-		}
+	if sm.sessionExists(sessionName) {
+		return nil, errors.SessionExists(sessionName)
 	}
 
-	session := &Session{
-		ID:           uuid.New().String(),
-		Name:         name,
-		Status:       SessionActive,
-		CreatedAt:    time.Now(),
-		LastActive:   time.Now(),
-		Windows:      make([]*Window, 0),
-		ActiveWindow: 0,
+	// 创建会话对象
+	session, err := sm.buildSession(sessionName)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "创建会话对象失败")
 	}
 
 	// 创建默认窗口
 	window, err := sm.createWindow(session, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create default window: %v", err)
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "创建默认窗口失败")
 	}
 
 	session.Windows = append(session.Windows, window)
 	sm.sessions[session.ID] = session
+
+	logger.Info("session created",
+		zap.String("session_id", session.ID),
+		zap.String("session_name", sessionName),
+		zap.Int("total_sessions", len(sm.sessions)),
+	)
 
 	return session, nil
 }
 
 // GetSession 获取会话
 func (sm *SessionManager) GetSession(sessionID string) (*Session, error) {
+	if err := utils.Validation.ValidateNotEmpty(sessionID, "sessionID"); err != nil {
+		return nil, err
+	}
+
 	session, exists := sm.sessions[sessionID]
 	if !exists {
-		return nil, fmt.Errorf("session not found: %s", sessionID)
+		return nil, errors.SessionNotFound(sessionID)
 	}
 	return session, nil
 }
@@ -878,4 +886,36 @@ func isNumeric(s string) bool {
 		}
 	}
 	return true
+}
+
+// generateSessionName 生成会话名称
+func (sm *SessionManager) generateSessionName(name string) string {
+	if utils.Strings.IsNotEmpty(name) {
+		return name
+	}
+	return fmt.Sprintf("session-%d", len(sm.sessions)+1)
+}
+
+// sessionExists 检查会话是否已存在
+func (sm *SessionManager) sessionExists(name string) bool {
+	for _, session := range sm.sessions {
+		if session.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// buildSession 构建会话对象
+func (sm *SessionManager) buildSession(name string) (*Session, error) {
+	session := &Session{
+		ID:           uuid.New().String(),
+		Name:         name,
+		Status:       SessionActive,
+		CreatedAt:    utils.Times.Now(),
+		LastActive:   utils.Times.Now(),
+		Windows:      make([]*Window, 0),
+		ActiveWindow: 0,
+	}
+	return session, nil
 }

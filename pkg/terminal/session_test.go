@@ -1,8 +1,8 @@
 /*
 * @Author: Lzww0608
-* @Date: 2025-5-31 16:14:41
+* @Date: 2025-6-1 21:10:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-5-31 16:14:44
+* @LastEditTime: 2025-6-1 21:10:03
 * @Description: 会话管理测试
  */
 
@@ -44,7 +44,7 @@ func TestSessionManager_CreateSession(t *testing.T) {
 	t.Run("创建重复名称的会话", func(t *testing.T) {
 		_, err := sm.CreateSession("test-session")
 		assert.Error(t, err, "应该拒绝重复的会话名称")
-		assert.Contains(t, err.Error(), "already exists")
+		assert.Contains(t, err.Error(), "会话已存在")
 	})
 }
 
@@ -63,7 +63,7 @@ func TestSessionManager_GetSession(t *testing.T) {
 	t.Run("获取不存在的会话", func(t *testing.T) {
 		_, err := sm.GetSession("non-existent")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "session not found")
+		assert.Contains(t, err.Error(), "会话未找到")
 	})
 }
 
@@ -360,7 +360,7 @@ func TestSessionManager_RenameSession(t *testing.T) {
 		// 尝试重命名为已存在的名称
 		err = sm.RenameSession(session.ID, "existing-name")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "already exists")
+		assert.Contains(t, err.Error(), "会话已存在")
 
 		// 但是重命名为自己的名称应该可以
 		err = sm.RenameSession(session2.ID, "existing-name")

@@ -405,6 +405,17 @@ ClixGo 项目正在持续改进测试覆盖率和代码质量，目前已完成�
 
 欢迎提交 Issue 和 Pull Request 贡献代码。
 
+## 📚 文档
+
+- **[📖 完整文档](./docs/)** - 项目文档中心
+- **[🏗️ 架构设计](./docs/architecture/)** - 系统架构和设计文档
+- **[🔧 实现细节](./docs/implementation/)** - 技术实现方案
+- **[📊 项目报告](./docs/reports/)** - 开发阶段报告
+- **[📖 开发指南](./docs/guides/)** - 开发规范和贡献指南
+- **[🚀 开发进度](./docs/development/)** - 项目进度跟踪
+- **[📋 API文档](./docs/api/)** - API接口文档（规划中）
+- **[🗺️ 开发路线图](./ROADMAP.md)** - 项目发展规划
+
 ## 许可证
 
 MIT License 

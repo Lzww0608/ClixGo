@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-6-1 20:50:44
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-1 20:50:44
+* @LastEditTime: 2025-6-1 21:21:40
 * @Description: 终端性能基准测试
  */
 
@@ -11,16 +11,27 @@ package benchmarks
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/Lzww0608/ClixGo/pkg/terminal"
 )
 
-// 终端创建基准测试
+// TestMain 在测试开始前初始化logger
+func TestMain(m *testing.M) {
+	// 初始化日志系统
+	logger.InitLogger()
+	defer logger.Close()
+
+	// 运行测试
+	code := m.Run()
+	os.Exit(code)
+}
+
+// 终端创建性能基准测试
 func BenchmarkTerminalCreation(b *testing.B) {
 	tempDir := "/tmp/clixgo_bench_" + strconv.Itoa(int(time.Now().Unix()))
 	defer os.RemoveAll(tempDir)
@@ -30,55 +41,49 @@ func BenchmarkTerminalCreation(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// 创建会话管理器
-		sessionDir := filepath.Join(tempDir, fmt.Sprintf("session_%d", i))
-		os.MkdirAll(sessionDir, 0755)
-
-		manager := terminal.NewSessionManager(sessionDir)
+		config := &terminal.TerminalConfig{
+			BufferSize: 2000,
+			ScrollBack: 2000,
+		}
+		manager := terminal.NewSessionManager(config)
 
 		// 创建会话
 		sessionID := fmt.Sprintf("bench_session_%d", i)
-		session, err := manager.CreateSession(sessionID, &terminal.SessionConfig{
-			Command: []string{"/bin/echo", "benchmark"},
-			WorkDir: "/tmp",
-		})
+		session, err := manager.CreateSession(sessionID)
 
 		if err != nil {
 			b.Fatalf("创建会话失败: %v", err)
 		}
 
-		// 立即关闭以释放资源
-		session.Close()
-		manager.DestroySession(sessionID)
+		// 立即销毁以释放资源
+		manager.KillSession(session.ID)
 	}
 }
 
 // 会话切换性能基准测试
 func BenchmarkSessionSwitch(b *testing.B) {
-	tempDir := "/tmp/clixgo_bench_switch_" + strconv.Itoa(int(time.Now().Unix()))
-	defer os.RemoveAll(tempDir)
-
-	manager := terminal.NewSessionManager(tempDir)
+	config := &terminal.TerminalConfig{
+		BufferSize: 2000,
+		ScrollBack: 2000,
+	}
+	manager := terminal.NewSessionManager(config)
 
 	// 预创建多个会话
 	sessionCount := 10
 	sessionIDs := make([]string, sessionCount)
 
 	for i := 0; i < sessionCount; i++ {
-		sessionID := fmt.Sprintf("switch_session_%d", i)
-		sessionIDs[i] = sessionID
-
-		_, err := manager.CreateSession(sessionID, &terminal.SessionConfig{
-			Command: []string{"/bin/sleep", "60"},
-			WorkDir: "/tmp",
-		})
+		sessionName := fmt.Sprintf("switch_session_%d", i)
+		session, err := manager.CreateSession(sessionName)
 		if err != nil {
 			b.Fatalf("创建会话失败: %v", err)
 		}
+		sessionIDs[i] = session.ID
 	}
 
 	defer func() {
 		for _, sessionID := range sessionIDs {
-			manager.DestroySession(sessionID)
+			manager.KillSession(sessionID)
 		}
 	}()
 
@@ -95,70 +100,58 @@ func BenchmarkSessionSwitch(b *testing.B) {
 		}
 
 		// 模拟激活会话
-		_ = session.IsActive()
+		_ = (session.Status == terminal.SessionActive)
 	}
 }
 
 // PTY操作性能基准测试
 func BenchmarkPTYOperations(b *testing.B) {
-	b.Run("PTY创建", func(b *testing.B) {
+	b.Run("会话创建", func(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 
+		config := &terminal.TerminalConfig{
+			BufferSize: 2000,
+			ScrollBack: 2000,
+		}
+
 		for i := 0; i < b.N; i++ {
-			pty, err := terminal.NewPTY(&terminal.PTYConfig{
-				Command: []string{"/bin/echo", "test"},
-				WorkDir: "/tmp",
-			})
+			manager := terminal.NewSessionManager(config)
+			sessionName := fmt.Sprintf("pty_session_%d", i)
+			session, err := manager.CreateSession(sessionName)
 			if err != nil {
-				b.Fatalf("创建PTY失败: %v", err)
+				b.Fatalf("创建会话失败: %v", err)
 			}
-			pty.Close()
+			manager.KillSession(session.ID)
 		}
 	})
 
-	b.Run("PTY写入", func(b *testing.B) {
-		pty, err := terminal.NewPTY(&terminal.PTYConfig{
-			Command: []string{"/bin/cat"},
-			WorkDir: "/tmp",
-		})
-		if err != nil {
-			b.Fatalf("创建PTY失败: %v", err)
+	b.Run("窗口操作", func(b *testing.B) {
+		config := &terminal.TerminalConfig{
+			BufferSize: 2000,
+			ScrollBack: 2000,
 		}
-		defer pty.Close()
-
-		testData := []byte("benchmark test data\n")
+		manager := terminal.NewSessionManager(config)
+		session, err := manager.CreateSession("window_test_session")
+		if err != nil {
+			b.Fatalf("创建会话失败: %v", err)
+		}
+		defer manager.KillSession(session.ID)
 
 		b.ResetTimer()
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			_, err := pty.Write(testData)
+			windowName := fmt.Sprintf("window_%d", i)
+			window, err := manager.CreateWindow(session.ID, windowName)
 			if err != nil {
-				b.Fatalf("PTY写入失败: %v", err)
+				b.Fatalf("创建窗口失败: %v", err)
 			}
-		}
-	})
 
-	b.Run("PTY读取", func(b *testing.B) {
-		pty, err := terminal.NewPTY(&terminal.PTYConfig{
-			Command: []string{"/bin/sh", "-c", "while true; do echo 'test data'; sleep 0.001; done"},
-			WorkDir: "/tmp",
-		})
-		if err != nil {
-			b.Fatalf("创建PTY失败: %v", err)
-		}
-		defer pty.Close()
-
-		buffer := make([]byte, 1024)
-
-		b.ResetTimer()
-		b.ReportAllocs()
-
-		for i := 0; i < b.N; i++ {
-			_, err := pty.Read(buffer)
+			// 立即关闭窗口
+			err = manager.CloseWindow(session.ID, window.Index)
 			if err != nil {
-				b.Fatalf("PTY读取失败: %v", err)
+				// 忽略关闭错误，可能是最后一个窗口
 			}
 		}
 	})
@@ -166,13 +159,13 @@ func BenchmarkPTYOperations(b *testing.B) {
 
 // 并发会话管理基准测试
 func BenchmarkConcurrentSessionManagement(b *testing.B) {
-	tempDir := "/tmp/clixgo_bench_concurrent_" + strconv.Itoa(int(time.Now().Unix()))
-	defer os.RemoveAll(tempDir)
-
-	manager := terminal.NewSessionManager(tempDir)
+	config := &terminal.TerminalConfig{
+		BufferSize: 2000,
+		ScrollBack: 2000,
+	}
 
 	// 测试不同的并发级别
-	concurrencyLevels := []int{1, 5, 10, 20, 50}
+	concurrencyLevels := []int{1, 5, 10, 20}
 
 	for _, concurrency := range concurrencyLevels {
 		b.Run(fmt.Sprintf("并发数_%d", concurrency), func(b *testing.B) {
@@ -180,6 +173,7 @@ func BenchmarkConcurrentSessionManagement(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
+				manager := terminal.NewSessionManager(config)
 				var wg sync.WaitGroup
 				errors := make(chan error, concurrency)
 
@@ -188,13 +182,9 @@ func BenchmarkConcurrentSessionManagement(b *testing.B) {
 					go func(id int) {
 						defer wg.Done()
 
-						sessionID := fmt.Sprintf("concurrent_session_%d_%d", i, id)
+						sessionName := fmt.Sprintf("concurrent_session_%d_%d", i, id)
 
-						session, err := manager.CreateSession(sessionID, &terminal.SessionConfig{
-							Command: []string{"/bin/echo", "concurrent_test"},
-							WorkDir: "/tmp",
-						})
-
+						session, err := manager.CreateSession(sessionName)
 						if err != nil {
 							errors <- err
 							return
@@ -202,8 +192,7 @@ func BenchmarkConcurrentSessionManagement(b *testing.B) {
 
 						// 短暂操作后销毁会话
 						time.Sleep(1 * time.Millisecond)
-						session.Close()
-						manager.DestroySession(sessionID)
+						manager.KillSession(session.ID)
 
 						errors <- nil
 					}(j)
@@ -228,109 +217,115 @@ func BenchmarkTerminalMemoryAllocation(b *testing.B) {
 		bufferSizes := []int{1024, 4096, 16384, 65536}
 
 		for _, size := range bufferSizes {
-			b.Run(fmt.Sprintf("缓冲区_%dB", size), func(b *testing.B) {
+			b.Run(fmt.Sprintf("缓冲区大小_%d", size), func(b *testing.B) {
+				config := &terminal.TerminalConfig{
+					BufferSize: size,
+					ScrollBack: size,
+				}
+
 				b.ResetTimer()
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					buffer := make([]byte, size)
-					// 模拟使用缓冲区
-					for j := 0; j < len(buffer); j += 64 {
-						buffer[j] = byte(i % 256)
+					manager := terminal.NewSessionManager(config)
+					sessionName := fmt.Sprintf("mem_session_%d", i)
+					session, err := manager.CreateSession(sessionName)
+					if err != nil {
+						b.Fatalf("创建会话失败: %v", err)
 					}
-					_ = buffer
+					manager.KillSession(session.ID)
 				}
 			})
 		}
 	})
+}
 
-	b.Run("会话状态分配", func(b *testing.B) {
+// 会话持久化基准测试
+func BenchmarkSessionPersistence(b *testing.B) {
+	config := &terminal.TerminalConfig{
+		BufferSize: 2000,
+		ScrollBack: 2000,
+	}
+
+	b.Run("会话保存", func(b *testing.B) {
+		manager := terminal.NewSessionManager(config)
+
+		// 创建测试会话
+		session, err := manager.CreateSession("persistence_test_session")
+		if err != nil {
+			b.Fatalf("创建会话失败: %v", err)
+		}
+		defer manager.KillSession(session.ID)
+
 		b.ResetTimer()
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			// 模拟创建会话状态对象
-			state := &terminal.SessionState{
-				ID:        fmt.Sprintf("session_%d", i),
-				Command:   []string{"/bin/bash"},
-				WorkDir:   "/tmp",
-				Env:       []string{"PATH=/bin:/usr/bin"},
-				CreatedAt: time.Now(),
+			// 模拟会话状态保存
+			err := manager.SaveSession(session.ID, fmt.Sprintf("/tmp/session_save_%d.json", i))
+			if err != nil {
+				b.Fatalf("保存会话失败: %v", err)
 			}
-			_ = state
 		}
 	})
-}
 
-// 会话持久化性能基准测试
-func BenchmarkSessionPersistence(b *testing.B) {
-	tempDir := "/tmp/clixgo_bench_persistence_" + strconv.Itoa(int(time.Now().Unix()))
-	defer os.RemoveAll(tempDir)
+	b.Run("会话加载", func(b *testing.B) {
+		manager := terminal.NewSessionManager(config)
 
-	manager := terminal.NewSessionManager(tempDir)
+		// 预先保存一个会话
+		session, err := manager.CreateSession("load_test_session")
+		if err != nil {
+			b.Fatalf("创建会话失败: %v", err)
+		}
 
-	// 创建测试会话
-	sessionID := "persistence_test_session"
-	session, err := manager.CreateSession(sessionID, &terminal.SessionConfig{
-		Command: []string{"/bin/bash"},
-		WorkDir: "/tmp",
+		saveFile := "/tmp/session_load_test.json"
+		err = manager.SaveSession(session.ID, saveFile)
+		if err != nil {
+			b.Fatalf("保存会话失败: %v", err)
+		}
+		defer os.Remove(saveFile)
+
+		manager.KillSession(session.ID)
+
+		b.ResetTimer()
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			_, err := manager.LoadSession(saveFile)
+			if err != nil {
+				b.Fatalf("加载会话失败: %v", err)
+			}
+		}
 	})
-	if err != nil {
-		b.Fatalf("创建会话失败: %v", err)
-	}
-	defer session.Close()
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		// 保存会话状态
-		err := session.SaveState()
-		if err != nil {
-			b.Fatalf("保存会话状态失败: %v", err)
-		}
-
-		// 模拟从磁盘恢复
-		_, err = manager.RestoreSession(sessionID)
-		if err != nil {
-			b.Fatalf("恢复会话失败: %v", err)
-		}
-	}
 }
 
 // 启动时间基准测试
 func BenchmarkStartupTime(b *testing.B) {
-	tempDir := "/tmp/clixgo_bench_startup_" + strconv.Itoa(int(time.Now().Unix()))
-	defer os.RemoveAll(tempDir)
-
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		startTime := time.Now()
+		config := &terminal.TerminalConfig{
+			BufferSize: 2000,
+			ScrollBack: 2000,
+		}
 
-		// 模拟完整的启动过程
-		manager := terminal.NewSessionManager(tempDir)
+		// 测量从创建管理器到第一个会话可用的时间
+		start := time.Now()
 
-		// 创建默认会话
-		sessionID := "default"
-		session, err := manager.CreateSession(sessionID, &terminal.SessionConfig{
-			Command: []string{"/bin/bash"},
-			WorkDir: "/tmp",
-		})
+		manager := terminal.NewSessionManager(config)
+		session, err := manager.CreateSession("startup_test_session")
 		if err != nil {
-			b.Fatalf("启动过程失败: %v", err)
+			b.Fatalf("创建会话失败: %v", err)
 		}
 
-		elapsedTime := time.Since(startTime)
+		elapsed := time.Since(start)
 
-		// 记录启动时间
-		if i == 0 {
-			b.Logf("首次启动时间: %v", elapsedTime)
+		// 记录启动时间（可选）
+		if elapsed > 100*time.Millisecond {
+			b.Logf("启动时间较长: %v", elapsed)
 		}
 
-		// 清理
-		session.Close()
-		manager.DestroySession(sessionID)
+		manager.KillSession(session.ID)
 	}
 }
