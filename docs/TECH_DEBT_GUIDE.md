@@ -855,4 +855,365 @@ echo "✅ 预提交检查通过"
 4. **质量门禁** - 确保代码质量的检查机制
 5. **进度跟踪** - 明确的里程碑和完成标准
 
-您可以按照这个计划逐步实施，每完成一个阶段就能看到明显的改进效果。建议从测试覆盖率最低的模块开始，优先处理核心功能模块。 
+您可以按照这个计划逐步实施，每完成一个阶段就能看到明显的改进效果。建议从测试覆盖率最低的模块开始，优先处理核心功能模块。
+
+---
+
+## 🎯 命令行工具测试最佳实践
+
+基于ClixGo项目Phase 3阶段命令行工具测试修复的实战经验，总结出以下关键的最佳实践：
+
+### 1. 内存安全编程实践
+
+#### 避免无符号整数下溢陷阱
+```go
+// ❌ 错误的方式 - 可能产生下溢
+func calculateMemoryGrowth(initial, final uint64) uint64 {
+    return final - initial  // 当final < initial时下溢
+}
+
+// ✅ 正确的方式 - 安全的内存增长计算
+func calculateMemoryGrowth(initial, final uint64) int64 {
+    if final >= initial {
+        return int64(final - initial)
+    } else {
+        return -int64(initial - final)  // 支持负增长
+    }
+}
+```
+
+#### 内存泄漏检测模式
+```go
+func TestMemoryLeakDetection(t *testing.T) {
+    // 记录初始状态
+    var initialMem runtime.MemStats
+    runtime.ReadMemStats(&initialMem)
+    
+    // 执行测试操作
+    runTestOperation()
+    
+    // 强制垃圾回收
+    runtime.GC()
+    runtime.GC()
+    
+    // 记录最终状态
+    var finalMem runtime.MemStats
+    runtime.ReadMemStats(&finalMem)
+    
+    // 安全的内存增长计算
+    memoryGrowth := calculateMemoryGrowth(initialMem.Alloc, finalMem.Alloc)
+    
+    // 允许适度的内存增长和减少
+    maxAcceptableGrowth := int64(50 * 1024 * 1024) // 50MB
+    assert.True(t, memoryGrowth <= maxAcceptableGrowth,
+        "内存增长超出预期: %d bytes", memoryGrowth)
+}
+```
+
+### 2. Cobra命令测试框架
+
+#### 统一的输出捕获机制
+```go
+// 标准化的命令输出捕获函数
+func captureCommandOutput(cmd *cobra.Command, timeout time.Duration) (string, error) {
+    // 重定向stdout
+    originalStdout := os.Stdout
+    r, w, _ := os.Pipe()
+    os.Stdout = w
+
+    var cmdBuf bytes.Buffer
+    cmd.SetOut(&cmdBuf)
+    cmd.SetErr(&cmdBuf)
+
+    done := make(chan error, 1)
+    outputChan := make(chan string, 1)
+
+    // 执行命令
+    go func() {
+        defer func() {
+            w.Close()
+            os.Stdout = originalStdout
+            done <- nil
+        }()
+        err := cmd.Execute()
+        done <- err
+    }()
+
+    // 读取输出
+    go func() {
+        buf := make([]byte, 4096)
+        n, _ := r.Read(buf)
+        outputChan <- string(buf[:n])
+    }()
+
+    // 等待完成
+    select {
+    case err := <-done:
+        var output string
+        select {
+        case output = <-outputChan:
+        case <-time.After(100 * time.Millisecond):
+            output = cmdBuf.String() // fallback
+        }
+        return output, err
+    case <-time.After(timeout):
+        return "", fmt.Errorf("命令执行超时")
+    }
+}
+```
+
+#### 子命令检查最佳实践
+```go
+func TestCommandStructure(t *testing.T) {
+    cmd := createMainCommand()
+    
+    expectedSubCommands := []string{"create", "list", "status", "cancel", "watch"}
+    actualSubCommands := make([]string, 0)
+    
+    for _, subCmd := range cmd.Commands() {
+        // 提取命令名称（忽略参数）
+        cmdName := strings.Split(subCmd.Use, " ")[0]
+        actualSubCommands = append(actualSubCommands, cmdName)
+    }
+    
+    for _, expected := range expectedSubCommands {
+        assert.Contains(t, actualSubCommands, expected,
+            "应该包含子命令: %s", expected)
+    }
+}
+```
+
+### 3. 测试环境隔离模式
+
+#### 独立测试管理器设置
+```go
+type TestEnvironment struct {
+    tempDir     string
+    taskManager *task.TaskManager
+    logger      *zap.Logger
+    cleanup     func()
+}
+
+func setupTestEnvironment(t *testing.T) *TestEnvironment {
+    // 创建临时目录
+    tmpDir := "/tmp/clixgo_test_" + time.Now().Format("20060102_150405_") + 
+             strconv.Itoa(rand.Int())
+    
+    err := os.MkdirAll(tmpDir, 0755)
+    require.NoError(t, err)
+    
+    // 创建测试日志器
+    testLogger := zaptest.NewLogger(t)
+    
+    // 创建任务管理器
+    storePath := filepath.Join(tmpDir, "tasks.json")
+    taskManager, err := task.NewTaskManager(testLogger, storePath)
+    require.NoError(t, err)
+    
+    return &TestEnvironment{
+        tempDir:     tmpDir,
+        taskManager: taskManager,
+        logger:      testLogger,
+        cleanup: func() {
+            os.RemoveAll(tmpDir)
+        },
+    }
+}
+
+func (env *TestEnvironment) Cleanup() {
+    if env.cleanup != nil {
+        env.cleanup()
+    }
+}
+```
+
+### 4. 超时和并发安全
+
+#### 标准化超时处理
+```go
+const (
+    // 测试超时常量
+    DefaultTestTimeout = 15 * time.Second
+    QuickTestTimeout   = 5 * time.Second
+    SlowTestTimeout    = 30 * time.Second
+)
+
+func TestWithTimeout(t *testing.T, timeout time.Duration, testFunc func(context.Context)) {
+    ctx, cancel := context.WithTimeout(context.Background(), timeout)
+    defer cancel()
+    
+    done := make(chan bool, 1)
+    go func() {
+        defer func() {
+            if r := recover(); r != nil {
+                t.Errorf("测试panic: %v", r)
+            }
+            done <- true
+        }()
+        testFunc(ctx)
+    }()
+    
+    select {
+    case <-done:
+        // 测试正常完成
+    case <-ctx.Done():
+        t.Fatalf("测试超时: %v", ctx.Err())
+    }
+}
+```
+
+#### 并发测试安全模式
+```go
+func TestConcurrentSafety(t *testing.T) {
+    const numGoroutines = 10
+    var wg sync.WaitGroup
+    errors := make(chan error, numGoroutines)
+    
+    for i := 0; i < numGoroutines; i++ {
+        wg.Add(1)
+        go func(id int) {
+            defer wg.Done()
+            
+            // 执行并发操作
+            err := performConcurrentOperation(id)
+            if err != nil {
+                errors <- err
+                return
+            }
+            errors <- nil
+        }(i)
+    }
+    
+    // 等待所有操作完成
+    go func() {
+        wg.Wait()
+        close(errors)
+    }()
+    
+    // 收集错误
+    errorCount := 0
+    for err := range errors {
+        if err != nil {
+            t.Errorf("并发操作失败: %v", err)
+            errorCount++
+        }
+    }
+    
+    assert.Equal(t, 0, errorCount, "不应该有并发错误")
+}
+```
+
+### 5. 错误处理和验证
+
+#### 智能错误检查
+```go
+func TestCommandErrorHandling(t *testing.T) {
+    tests := []struct {
+        name          string
+        args          []string
+        expectError   bool
+        errorContains []string  // 支持多个错误关键词
+        timeout       time.Duration
+    }{
+        {
+            name:          "invalid_args",
+            args:          []string{"invalid"},
+            expectError:   true,
+            errorContains: []string{"accepts", "arg"},
+            timeout:       QuickTestTimeout,
+        },
+        // 更多测试用例...
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            cmd := createTestCommand()
+            cmd.SetArgs(tt.args)
+            
+            err := cmd.Execute()
+            
+            if tt.expectError {
+                assert.Error(t, err)
+                for _, keyword := range tt.errorContains {
+                    assert.Contains(t, err.Error(), keyword,
+                        "错误信息应包含关键词: %s", keyword)
+                }
+            } else {
+                assert.NoError(t, err)
+            }
+        })
+    }
+}
+```
+
+### 6. 性能基准测试
+
+#### 命令创建性能基准
+```go
+func BenchmarkCommandCreation(b *testing.B) {
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        cmd := createCommand()
+        _ = cmd // 防止优化
+    }
+}
+
+func BenchmarkCommandExecution(b *testing.B) {
+    env := setupBenchmarkEnvironment(b)
+    defer env.Cleanup()
+    
+    cmd := createCommand()
+    
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        cmd.SetArgs([]string{"benchmark_task", "基准测试"})
+        _ = cmd.Execute()
+    }
+}
+```
+
+### 7. 测试数据管理
+
+#### 测试数据生成工具
+```go
+type TestDataGenerator struct {
+    counter int64
+}
+
+func NewTestDataGenerator() *TestDataGenerator {
+    return &TestDataGenerator{counter: 0}
+}
+
+func (g *TestDataGenerator) GenerateTaskName() string {
+    atomic.AddInt64(&g.counter, 1)
+    return fmt.Sprintf("test_task_%d_%d", 
+        time.Now().Unix(), g.counter)
+}
+
+func (g *TestDataGenerator) GenerateTaskDescription() string {
+    return fmt.Sprintf("测试任务描述_%d", g.counter)
+}
+```
+
+### 8. 测试报告和调试
+
+#### 详细的测试输出
+```go
+func TestWithDetailedLogging(t *testing.T) {
+    t.Log("开始测试...")
+    
+    // 记录测试环境信息
+    t.Logf("测试环境: %s", runtime.GOOS)
+    t.Logf("Go版本: %s", runtime.Version())
+    t.Logf("Goroutine数量: %d", runtime.NumGoroutine())
+    
+    // 执行测试...
+    
+    if testing.Verbose() {
+        // 详细模式下的额外输出
+        t.Logf("详细测试信息...")
+    }
+}
+```
+
+这些最佳实践基于实际项目修复经验，为Go语言命令行工具的测试提供了完整的解决方案框架。 

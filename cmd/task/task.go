@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 09:24:08
 * @Description: 任务管理命令的实现
  */
 
@@ -187,9 +187,17 @@ func watchCommand() *cobra.Command {
 		Short: "监控任务进度",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			taskID := args[0]
+
+			// 首先检查任务是否存在
+			_, err := taskManager.GetTask(taskID)
+			if err != nil {
+				return err
+			}
+
 			ctx := context.Background()
-			updates := taskManager.SubscribeTask(args[0])
-			defer taskManager.UnsubscribeTask(args[0], updates)
+			updates := taskManager.SubscribeTask(taskID)
+			defer taskManager.UnsubscribeTask(taskID, updates)
 
 			fmt.Println("正在监控任务进度...")
 			for {
