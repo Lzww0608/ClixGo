@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 22:07:00
 * @Description: 终端服务器的核心实现
  */
 
@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Lzww0608/ClixGo/pkg/errors"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -85,18 +86,21 @@ func (ts *TerminalServer) Start() error {
 	defer ts.mutex.Unlock()
 
 	if ts.running {
-		return fmt.Errorf("server is already running")
+		return errors.New(errors.ErrCodeExists, "服务器已在运行").
+			WithDetails("terminal server is already running")
 	}
 
 	// 删除已存在的socket文件
 	if err := os.Remove(ts.socketPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove existing socket: %v", err)
+		return errors.Wrap(err, errors.ErrCodeFileNotFound, "删除已存在的socket文件失败").
+			WithDetails("socket path: " + ts.socketPath)
 	}
 
 	// 创建Unix domain socket监听器
 	listener, err := net.Listen("unix", ts.socketPath)
 	if err != nil {
-		return fmt.Errorf("failed to create listener: %v", err)
+		return errors.Wrap(err, errors.ErrCodeNetworkUnreachable, "创建socket监听器失败").
+			WithDetails("socket path: " + ts.socketPath)
 	}
 
 	ts.listener = listener
@@ -128,7 +132,8 @@ func (ts *TerminalServer) Stop() error {
 	defer ts.mutex.Unlock()
 
 	if !ts.running {
-		return fmt.Errorf("server is not running")
+		return errors.New(errors.ErrCodeInvalid, "服务器未运行").
+			WithDetails("server is not running")
 	}
 
 	ts.cancel()
@@ -256,7 +261,7 @@ func (ts *TerminalServer) handleCommand(client *ClientConnection, cmd *Command) 
 		return ts.handleKillSession(client, cmd.Payload)
 	default:
 		return map[string]interface{}{
-			"error": fmt.Sprintf("unknown command type: %s", cmd.Type),
+			"error": "unknown command type: " + string(cmd.Type),
 		}
 	}
 }

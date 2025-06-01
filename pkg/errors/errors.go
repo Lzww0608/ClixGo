@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-6-1 21:09:25
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-1 21:26:15
+* @LastEditTime: 2025-6-1 22:07:33
 * @Description: ClixGo 统一错误处理框架
  */
 
@@ -20,13 +20,17 @@ type ErrorCode string
 // 预定义错误码
 const (
 	// 通用错误
-	ErrCodeUnknown  ErrorCode = "UNKNOWN"
-	ErrCodeInternal ErrorCode = "INTERNAL"
-	ErrCodeInvalid  ErrorCode = "INVALID"
-	ErrCodeNotFound ErrorCode = "NOT_FOUND"
-	ErrCodeExists   ErrorCode = "EXISTS"
-	ErrCodeTimeout  ErrorCode = "TIMEOUT"
-	ErrCodeCanceled ErrorCode = "CANCELED"
+	ErrCodeUnknown      ErrorCode = "UNKNOWN"
+	ErrCodeInternal     ErrorCode = "INTERNAL"
+	ErrCodeInvalid      ErrorCode = "INVALID"
+	ErrCodeInvalidParam ErrorCode = "INVALID_PARAM"
+	ErrCodeNotFound     ErrorCode = "NOT_FOUND"
+	ErrCodeExists       ErrorCode = "EXISTS"
+	ErrCodeTimeout      ErrorCode = "TIMEOUT"
+	ErrCodeCanceled     ErrorCode = "CANCELED"
+
+	// 命令执行错误
+	ErrCodeCommandExecution ErrorCode = "COMMAND_EXECUTION"
 
 	// 会话管理错误
 	ErrCodeSessionNotFound ErrorCode = "SESSION_NOT_FOUND"
@@ -174,10 +178,12 @@ var defaultMessages = map[ErrorCode]string{
 	ErrCodeUnknown:            "未知错误",
 	ErrCodeInternal:           "内部错误",
 	ErrCodeInvalid:            "无效参数",
+	ErrCodeInvalidParam:       "参数无效",
 	ErrCodeNotFound:           "资源未找到",
 	ErrCodeExists:             "资源已存在",
 	ErrCodeTimeout:            "操作超时",
 	ErrCodeCanceled:           "操作已取消",
+	ErrCodeCommandExecution:   "命令执行失败",
 	ErrCodeSessionNotFound:    "会话未找到",
 	ErrCodeSessionExists:      "会话已存在",
 	ErrCodeSessionInactive:    "会话未激活",

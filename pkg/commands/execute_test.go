@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 22:09:25
 * @Description: 命令执行功能的单元测试
  */
 
@@ -79,7 +79,7 @@ func TestExecuteCommandsSequentially(t *testing.T) {
 		{
 			name:     "空命令列表",
 			commands: []string{},
-			wantErr:  false,
+			wantErr:  true,
 		},
 		{
 			name:     "单个有效命令",
@@ -129,7 +129,7 @@ func TestExecuteCommandsParallel(t *testing.T) {
 		{
 			name:     "空命令列表",
 			commands: []string{},
-			wantErr:  false,
+			wantErr:  true,
 		},
 		{
 			name: "多个有效命令",

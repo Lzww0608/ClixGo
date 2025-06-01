@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 22:06:37
 * @Description: 命令执行的核心实现，提供串行、并行、管道等执行方式
  */
 
@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/Lzww0608/ClixGo/pkg/alias"
+	"github.com/Lzww0608/ClixGo/pkg/errors"
 	"github.com/Lzww0608/ClixGo/pkg/history"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -27,6 +29,11 @@ const defaultCmdTimeout = 30 * time.Second
 
 // ExecuteCommand 执行单个命令
 func ExecuteCommand(command string) error {
+	// 参数验证
+	if err := utils.Validation.RequireNonEmpty(command, "command"); err != nil {
+		return errors.New(errors.ErrCodeInvalidParam, "命令不能为空").WithDetails("command parameter is required")
+	}
+
 	// 扩展别名
 	expandedCommand := alias.ExpandCommand(command)
 	if expandedCommand != command {
@@ -48,7 +55,7 @@ func ExecuteCommand(command string) error {
 		cmdHistory.EndTime = time.Now()
 		cmdHistory.Duration = cmdHistory.EndTime.Sub(startTime).String()
 		history.SaveHistory(cmdHistory)
-		return fmt.Errorf("空命令")
+		return errors.New(errors.ErrCodeInvalidParam, "空命令").WithDetails("command contains no executable parts")
 	}
 
 	// 使用默认超时时间
@@ -64,28 +71,44 @@ func ExecuteCommand(command string) error {
 
 	if err != nil {
 		cmdHistory.Status = "failed"
-		logger.Error("命令执行失败", zap.Error(err))
-	} else {
-		cmdHistory.Status = "success"
-		logger.Info("命令执行成功", zap.String("output", string(output)))
+		logger.Error("命令执行失败",
+			zap.String("command", command),
+			zap.Error(err),
+			zap.String("output", string(output)))
+
+		// 保存历史记录
+		if histErr := history.SaveHistory(cmdHistory); histErr != nil {
+			logger.Error("保存命令历史失败", zap.Error(histErr))
+		}
+
+		return errors.Wrap(err, errors.ErrCodeCommandExecution, "执行命令失败").
+			WithDetails(fmt.Sprintf("命令: %s, 输出: %s", command, string(output)))
 	}
+
+	cmdHistory.Status = "success"
+	logger.Info("命令执行成功",
+		zap.String("command", command),
+		zap.String("output", string(output)))
 
 	if err := history.SaveHistory(cmdHistory); err != nil {
 		logger.Error("保存命令历史失败", zap.Error(err))
 	}
 
-	if err != nil {
-		return fmt.Errorf("执行命令失败: %v\n输出: %s", err, string(output))
-	}
 	fmt.Printf("命令输出: %s\n", string(output))
 	return nil
 }
 
 // ExecuteCommandsSequentially 串行执行多个命令
 func ExecuteCommandsSequentially(commands []string) error {
-	for _, cmd := range commands {
+	if len(commands) == 0 {
+		return errors.New(errors.ErrCodeInvalidParam, "没有提供要执行的命令").
+			WithDetails("commands slice is empty")
+	}
+
+	for i, cmd := range commands {
 		if err := ExecuteCommand(cmd); err != nil {
-			return err
+			return errors.Wrap(err, errors.ErrCodeCommandExecution, "串行执行命令失败").
+				WithDetails(fmt.Sprintf("失败于第 %d 个命令: %s", i+1, cmd))
 		}
 	}
 	return nil
@@ -93,13 +116,13 @@ func ExecuteCommandsSequentially(commands []string) error {
 
 // ExecuteCommandsParallel 并行执行多个命令
 func ExecuteCommandsParallel(commands []string) error {
+	if len(commands) == 0 {
+		return errors.New(errors.ErrCodeInvalidParam, "没有提供要执行的命令").
+			WithDetails("commands slice is empty")
+	}
+
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(commands))
-
-	// 如果没有命令要执行，直接返回成功
-	if len(commands) == 0 {
-		return nil
-	}
 
 	for _, cmd := range commands {
 		wg.Add(1)
@@ -129,7 +152,7 @@ func ExecuteCommandsParallel(commands []string) error {
 	// 收集第一个错误并返回
 	for err := range errChan {
 		if err != nil {
-			return err
+			return errors.Wrap(err, errors.ErrCodeCommandExecution, "并行执行命令失败")
 		}
 	}
 	return nil

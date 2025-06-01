@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 22:07:14
 * @Description: 高级命令处理功能的实现，包括AWK、grep、sed等文本处理命令
  */
 
@@ -10,16 +10,25 @@ package commands
 
 import (
 	"bytes"
-	"fmt"
 	"os/exec"
 	"strings"
 
+	"github.com/Lzww0608/ClixGo/pkg/errors"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/utils"
 	"go.uber.org/zap"
 )
 
 // AWKCommand 执行AWK命令
 func AWKCommand(input string, pattern string) (string, error) {
+	// 参数验证
+	if err := utils.Validation.RequireNonEmpty(input, "input"); err != nil {
+		return "", err
+	}
+	if err := utils.Validation.RequireNonEmpty(pattern, "pattern"); err != nil {
+		return "", err
+	}
+
 	cmd := exec.Command("awk", pattern)
 	cmd.Stdin = strings.NewReader(input)
 
@@ -28,12 +37,11 @@ func AWKCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
-		defer func() {
-			recover()
-		}()
-		logger.Error("AWK命令执行失败", zap.Error(err))
-		return "", err
+		logger.Error("AWK命令执行失败",
+			zap.String("pattern", pattern),
+			zap.Error(err))
+		return "", errors.Wrap(err, errors.ErrCodeCommandExecution, "AWK命令执行失败").
+			WithDetails("awk pattern: " + pattern)
 	}
 
 	return out.String(), nil
@@ -41,6 +49,14 @@ func AWKCommand(input string, pattern string) (string, error) {
 
 // GrepCommand 执行grep命令
 func GrepCommand(input string, pattern string) (string, error) {
+	// 参数验证
+	if err := utils.Validation.RequireNonEmpty(input, "input"); err != nil {
+		return "", err
+	}
+	if err := utils.Validation.RequireNonEmpty(pattern, "pattern"); err != nil {
+		return "", err
+	}
+
 	cmd := exec.Command("grep", pattern)
 	cmd.Stdin = strings.NewReader(input)
 
@@ -49,12 +65,11 @@ func GrepCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
-		defer func() {
-			recover()
-		}()
-		logger.Error("grep命令执行失败", zap.Error(err))
-		return "", err
+		logger.Error("grep命令执行失败",
+			zap.String("pattern", pattern),
+			zap.Error(err))
+		return "", errors.Wrap(err, errors.ErrCodeCommandExecution, "grep命令执行失败").
+			WithDetails("grep pattern: " + pattern)
 	}
 
 	return out.String(), nil
@@ -62,6 +77,14 @@ func GrepCommand(input string, pattern string) (string, error) {
 
 // SedCommand 执行sed命令
 func SedCommand(input string, pattern string) (string, error) {
+	// 参数验证
+	if err := utils.Validation.RequireNonEmpty(input, "input"); err != nil {
+		return "", err
+	}
+	if err := utils.Validation.RequireNonEmpty(pattern, "pattern"); err != nil {
+		return "", err
+	}
+
 	cmd := exec.Command("sed", pattern)
 	cmd.Stdin = strings.NewReader(input)
 
@@ -70,12 +93,11 @@ func SedCommand(input string, pattern string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
-		defer func() {
-			recover()
-		}()
-		logger.Error("sed命令执行失败", zap.Error(err))
-		return "", err
+		logger.Error("sed命令执行失败",
+			zap.String("pattern", pattern),
+			zap.Error(err))
+		return "", errors.Wrap(err, errors.ErrCodeCommandExecution, "sed命令执行失败").
+			WithDetails("sed pattern: " + pattern)
 	}
 
 	return out.String(), nil
@@ -84,7 +106,8 @@ func SedCommand(input string, pattern string) (string, error) {
 // PipeCommands 执行管道命令
 func PipeCommands(commands []string) (string, error) {
 	if len(commands) == 0 {
-		return "", fmt.Errorf("没有提供命令")
+		return "", errors.New(errors.ErrCodeInvalidParam, "没有提供命令").
+			WithDetails("commands slice is empty")
 	}
 
 	var lastOutput bytes.Buffer
@@ -93,7 +116,8 @@ func PipeCommands(commands []string) (string, error) {
 	for i, command := range commands {
 		parts := strings.Fields(command)
 		if len(parts) == 0 {
-			return "", fmt.Errorf("空命令")
+			return "", errors.New(errors.ErrCodeInvalidParam, "空命令").
+				WithDetails("command at index " + utils.Strings.DefaultIfEmpty(string(rune(i)), "unknown") + " is empty")
 		}
 
 		cmd := exec.Command(parts[0], parts[1:]...)
@@ -108,12 +132,12 @@ func PipeCommands(commands []string) (string, error) {
 
 		err = cmd.Run()
 		if err != nil {
-			// 捕获错误但不终止程序，没有初始化logger的情况下会默默失败
-			defer func() {
-				recover()
-			}()
-			logger.Error("管道命令执行失败", zap.Error(err), zap.String("command", command))
-			return "", err
+			logger.Error("管道命令执行失败",
+				zap.String("command", command),
+				zap.Int("index", i),
+				zap.Error(err))
+			return "", errors.Wrap(err, errors.ErrCodeCommandExecution, "管道命令执行失败").
+				WithDetails("失败的命令: " + command)
 		}
 	}
 

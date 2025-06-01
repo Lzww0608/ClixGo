@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 22:06:42
 * @Description: 持久化功能示例程序
  */
 
@@ -11,73 +11,91 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/Lzww0608/ClixGo/pkg/terminal"
+	"go.uber.org/zap"
 )
 
 func main() {
 	// 初始化日志系统
 	err := logger.InitLogger()
 	if err != nil {
-		log.Fatal("初始化日志系统失败:", err)
+		fmt.Printf("初始化日志系统失败: %v\n", err)
+		return
 	}
 	defer logger.Close()
 
-	fmt.Println("🔄 ClixGo 会话持久化演示程序")
-	fmt.Println("================================")
-
 	// 创建会话管理器
 	config := terminal.DefaultConfig
-	sessionManager := terminal.NewSessionManager(config)
+	manager := terminal.NewSessionManager(config)
 
-	// 创建演示会话
-	setupDemoSessions(sessionManager)
-
-	// 交互式菜单
-	scanner := bufio.NewScanner(os.Stdin)
-	for {
-		showMenu()
-		fmt.Print("请选择操作: ")
-
-		if !scanner.Scan() {
-			break
-		}
-
-		choice := strings.TrimSpace(scanner.Text())
-
-		switch choice {
-		case "1":
-			listCurrentSessions(sessionManager)
-		case "2":
-			saveSession(sessionManager, scanner)
-		case "3":
-			loadSession(sessionManager, scanner)
-		case "4":
-			listSavedSessions(sessionManager)
-		case "5":
-			deleteSavedSession(sessionManager, scanner)
-		case "6":
-			showSessionDetails(sessionManager, scanner)
-		case "7":
-			demonstrateAutoSave(sessionManager)
-		case "8":
-			createNewSession(sessionManager, scanner)
-		case "0":
-			fmt.Println("👋 退出程序")
-			return
-		default:
-			fmt.Println("❌ 无效选择，请重试")
-		}
-
-		fmt.Println()
-		time.Sleep(500 * time.Millisecond) // 添加延迟防止死锁
+	// 创建会话
+	session, err := manager.CreateSession("demo-session")
+	if err != nil {
+		logger.Error("创建会话失败", zap.Error(err))
+		return
 	}
+
+	fmt.Printf("创建会话: %s (ID: %s)\n", session.Name, session.ID)
+
+	// 创建窗口
+	window, err := manager.CreateWindow(session.ID, "main")
+	if err != nil {
+		logger.Error("创建窗口失败", zap.Error(err))
+		return
+	}
+
+	fmt.Printf("创建窗口: %s (索引: %d)\n", window.Name, window.Index)
+
+	// 分割面板
+	pane, err := manager.SplitPane(session.ID, 0, "vertical")
+	if err != nil {
+		logger.Error("分割面板失败", zap.Error(err))
+		return
+	}
+
+	fmt.Printf("创建面板: 索引 %d\n", pane.Index)
+
+	// 等待一段时间模拟活动
+	time.Sleep(2 * time.Second)
+
+	// 保存会话
+	fmt.Println("保存会话...")
+	if err := manager.SaveSession(session.ID, ""); err != nil {
+		logger.Error("保存会话失败", zap.Error(err))
+		return
+	}
+
+	fmt.Println("会话保存成功!")
+
+	// 销毁会话
+	if err := manager.KillSession(session.ID); err != nil {
+		logger.Error("销毁会话失败", zap.Error(err))
+		return
+	}
+
+	fmt.Println("会话已销毁")
+
+	// 从持久化数据加载会话
+	fmt.Println("从持久化数据加载会话...")
+	loadedSession, err := manager.LoadSessionByName("demo-session")
+	if err != nil {
+		logger.Error("加载会话失败", zap.Error(err))
+		return
+	}
+
+	fmt.Printf("加载会话: %s (ID: %s)\n", loadedSession.Name, loadedSession.ID)
+	fmt.Printf("窗口数量: %d\n", len(loadedSession.Windows))
+
+	if len(loadedSession.Windows) > 0 {
+		fmt.Printf("第一个窗口面板数量: %d\n", len(loadedSession.Windows[0].Panes))
+	}
+
+	fmt.Println("持久化演示完成!")
 }
 
 func showMenu() {

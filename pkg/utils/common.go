@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-6-1 21:09:49
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-1 21:09:52
+* @LastEditTime: 2025-6-1 22:07:24
 * @Description: 通用工具函数
  */
 
@@ -219,6 +219,11 @@ func (t TimeUtils) WithTimeout(timeout time.Duration, fn func() error) error {
 
 // ValidationUtils 验证工具函数
 type ValidationUtils struct{}
+
+// RequireNonEmpty 要求字符串非空，如果为空则返回错误
+func (v ValidationUtils) RequireNonEmpty(value, fieldName string) error {
+	return v.ValidateNotEmpty(value, fieldName)
+}
 
 // ValidateNotEmpty 验证字符串非空
 func (v ValidationUtils) ValidateNotEmpty(value, fieldName string) error {

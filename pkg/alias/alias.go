@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-1 22:07:08
 * @Description: 命令别名管理功能的核心实现
  */
 
@@ -10,10 +10,12 @@ package alias
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Lzww0608/ClixGo/pkg/errors"
+	"github.com/Lzww0608/ClixGo/pkg/utils"
 )
 
 type Alias struct {
@@ -25,22 +27,22 @@ var aliasFile = filepath.Join(os.Getenv("HOME"), ".clixgo", "aliases.json")
 var aliases = make(map[string]string)
 
 func InitAliases() error {
-	if err := os.MkdirAll(filepath.Dir(aliasFile), 0755); err != nil {
-		return fmt.Errorf("创建别名配置目录失败: %v", err)
+	if err := utils.Files.EnsureDir(filepath.Dir(aliasFile)); err != nil {
+		return errors.Wrap(err, errors.ErrCodeFileNotFound, "创建别名配置目录失败")
 	}
 
-	if _, err := os.Stat(aliasFile); os.IsNotExist(err) {
+	if !utils.Files.Exists(aliasFile) {
 		return nil
 	}
 
 	data, err := os.ReadFile(aliasFile)
 	if err != nil {
-		return fmt.Errorf("读取别名文件失败: %v", err)
+		return errors.Wrap(err, errors.ErrCodeFileNotFound, "读取别名文件失败")
 	}
 
 	var aliasList []Alias
 	if err := json.Unmarshal(data, &aliasList); err != nil {
-		return fmt.Errorf("解析别名文件失败: %v", err)
+		return errors.Wrap(err, errors.ErrCodeConfigInvalid, "解析别名文件失败")
 	}
 
 	for _, a := range aliasList {
@@ -61,28 +63,45 @@ func SaveAliases() error {
 
 	data, err := json.MarshalIndent(aliasList, "", "  ")
 	if err != nil {
-		return fmt.Errorf("序列化别名失败: %v", err)
+		return errors.Wrap(err, errors.ErrCodeInternal, "序列化别名失败")
 	}
 
-	if err := os.WriteFile(aliasFile, data, 0644); err != nil {
-		return fmt.Errorf("保存别名文件失败: %v", err)
+	if err := utils.Files.SafeWriteFile(aliasFile, data, 0644); err != nil {
+		return errors.Wrap(err, errors.ErrCodeFileNotFound, "保存别名文件失败")
 	}
 
 	return nil
 }
 
 func AddAlias(name, command string) error {
-	if strings.Contains(name, " ") {
-		return fmt.Errorf("别名不能包含空格")
+	// 参数验证
+	if err := utils.Validation.RequireNonEmpty(name, "name"); err != nil {
+		return err
 	}
+	if err := utils.Validation.RequireNonEmpty(command, "command"); err != nil {
+		return err
+	}
+
+	if strings.Contains(name, " ") {
+		return errors.New(errors.ErrCodeInvalidParam, "别名不能包含空格").
+			WithDetails("alias name: " + name)
+	}
+
 	aliases[name] = command
 	return SaveAliases()
 }
 
 func RemoveAlias(name string) error {
-	if _, exists := aliases[name]; !exists {
-		return fmt.Errorf("别名不存在: %s", name)
+	// 参数验证
+	if err := utils.Validation.RequireNonEmpty(name, "name"); err != nil {
+		return err
 	}
+
+	if _, exists := aliases[name]; !exists {
+		return errors.New(errors.ErrCodeNotFound, "别名不存在").
+			WithDetails("alias name: " + name)
+	}
+
 	delete(aliases, name)
 	return SaveAliases()
 }
