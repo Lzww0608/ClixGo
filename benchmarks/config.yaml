@@ -1,0 +1,66 @@
+# ClixGo 基准测试配置文件
+
+# 性能基线目标
+performance_targets:
+  startup_time_ms: 50      # 启动时间目标 (毫秒)
+  memory_usage_mb: 8       # 内存使用目标 (MB)
+  cpu_usage_percent: 1     # CPU使用率目标 (%)
+  terminal_creation_ms: 10 # 终端创建时间 (毫秒)
+  session_switch_ms: 5     # 会话切换时间 (毫秒)
+  ui_fps: 60              # UI渲染帧率 (FPS)
+
+# 基准测试参数
+benchmark_settings:
+  run_time: "3s"          # 每个基准测试运行时间
+  warmup_iterations: 3    # 预热迭代次数
+  measurement_iterations: 10 # 测量迭代次数
+  cpu_profile: true       # 启用CPU性能分析
+  memory_profile: true    # 启用内存性能分析
+  block_profile: true     # 启用阻塞性能分析
+  
+# 测试数据规模
+test_data_sizes:
+  small_text: 1024        # 小文本 (1KB)
+  medium_text: 102400     # 中等文本 (100KB)
+  large_text: 10485760    # 大文本 (10MB)
+  concurrent_sessions: 50 # 并发会话数
+  concurrent_tasks: 100   # 并发任务数
+
+# 性能回归阈值
+regression_thresholds:
+  time_regression_percent: 10    # 时间回归阈值 (%)
+  memory_regression_percent: 15  # 内存回归阈值 (%)
+  allocation_regression_percent: 20 # 分配回归阈值 (%)
+
+# 报告配置
+reporting:
+  output_format: ["console", "json", "html"] # 输出格式
+  save_profiles: true      # 保存性能分析文件
+  generate_charts: true    # 生成性能图表
+  compare_baseline: true   # 与基线比较
+
+# 基准测试套件
+benchmark_suites:
+  core:
+    - terminal_creation
+    - session_management
+    - ui_rendering
+    - pty_operations
+  
+  data_processing:
+    - text_processing
+    - config_parsing
+    - network_data
+    - task_queue
+    
+  concurrency:
+    - concurrent_sessions
+    - concurrent_tasks
+    - concurrent_ui_updates
+    - concurrent_network_ops
+    
+  memory:
+    - memory_allocation
+    - garbage_collection
+    - memory_leaks
+    - cache_efficiency 

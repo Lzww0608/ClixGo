@@ -1,0 +1,278 @@
+name: 性能基准测试和回归检测
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # 每天凌晨2点运行基准测试
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      benchmark_time:
+        description: '基准测试运行时间'
+        required: false
+        default: '3s'
+      regression_threshold:
+        description: '性能回归阈值(%)'
+        required: false
+        default: '10'
+
+jobs:
+  performance-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    strategy:
+      matrix:
+        go-version: [1.23]
+    
+    steps:
+    - name: 🔧 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史以便比较
+    
+    - name: 🐹 设置Go环境
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+    
+    - name: 📦 安装依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc
+        go mod download
+        go mod verify
+    
+    - name: 🏗️ 编译项目
+      run: |
+        go build -v ./...
+    
+    - name: 🔍 检查基准测试
+      run: |
+        echo "检查可用的基准测试..."
+        go test -list=Benchmark ./... | head -20
+    
+    - name: 📊 运行基准测试
+      env:
+        BENCHMARK_TIME: ${{ github.event.inputs.benchmark_time || '3s' }}
+      run: |
+        echo "🚀 开始运行基准测试..."
+        echo "基准测试时间: $BENCHMARK_TIME"
+        
+        # 创建结果目录
+        mkdir -p benchmarks/results
+        
+        # 运行现有的基准测试
+        echo "运行现有基准测试..."
+        go test -bench=. -benchtime=$BENCHMARK_TIME -benchmem -timeout=20m ./... > benchmarks/results/current_$(date +%Y%m%d_%H%M%S).txt || true
+        
+        # 显示结果摘要
+        echo "📈 基准测试结果摘要:"
+        tail -20 benchmarks/results/current_*.txt || echo "未找到基准测试结果"
+    
+    - name: 📥 下载基线基准测试结果
+      uses: actions/cache@v3
+      with:
+        path: benchmarks/results/baseline.txt
+        key: benchmark-baseline-${{ github.repository }}-${{ github.ref_name }}
+        restore-keys: |
+          benchmark-baseline-${{ github.repository }}-main
+          benchmark-baseline-${{ github.repository }}-
+    
+    - name: 🔍 性能回归检测
+      if: github.event_name != 'schedule'
+      env:
+        REGRESSION_THRESHOLD: ${{ github.event.inputs.regression_threshold || '10' }}
+      run: |
+        current_file=$(ls benchmarks/results/current_*.txt | head -1)
+        baseline_file="benchmarks/results/baseline.txt"
+        
+        if [ -f "$baseline_file" ] && [ -f "$current_file" ]; then
+          echo "🔍 运行性能回归检测..."
+          echo "基线文件: $baseline_file"
+          echo "当前文件: $current_file"
+          echo "回归阈值: ${REGRESSION_THRESHOLD}%"
+          
+          # 运行回归检测
+          if ./scripts/benchmark-compare.sh \
+              --time-threshold $REGRESSION_THRESHOLD \
+              --memory-threshold $((REGRESSION_THRESHOLD + 5)) \
+              --alloc-threshold $((REGRESSION_THRESHOLD + 10)) \
+              --output benchmarks/results/regression_report.txt \
+              --verbose \
+              "$baseline_file" "$current_file"; then
+            echo "✅ 性能回归检测通过"
+          else
+            echo "❌ 检测到性能回归"
+            exit 1
+          fi
+        else
+          echo "⚠️ 缺少基线文件或当前文件，跳过回归检测"
+          if [ -f "$current_file" ]; then
+            echo "将当前结果设为新的基线..."
+            cp "$current_file" "$baseline_file"
+          fi
+        fi
+    
+    - name: 📊 生成性能报告
+      run: |
+        echo "📊 生成详细性能报告..."
+        
+        current_file=$(ls benchmarks/results/current_*.txt | head -1)
+        if [ -f "$current_file" ]; then
+          # 提取关键性能指标
+          echo "## 🚀 ClixGo 性能基准测试报告" > performance_report.md
+          echo "" >> performance_report.md
+          echo "**生成时间:** $(date)" >> performance_report.md
+          echo "**Git SHA:** ${{ github.sha }}" >> performance_report.md
+          echo "**分支:** ${{ github.ref_name }}" >> performance_report.md
+          echo "" >> performance_report.md
+          
+          echo "### 📈 关键性能指标" >> performance_report.md
+          echo "" >> performance_report.md
+          echo "| 基准测试 | 时间/操作 | 内存/操作 | 分配/操作 |" >> performance_report.md
+          echo "|----------|-----------|-----------|-----------|" >> performance_report.md
+          
+          # 提取主要基准测试结果
+          grep "^Benchmark" "$current_file" | head -10 | while read line; do
+            name=$(echo "$line" | awk '{print $1}' | sed 's/Benchmark//')
+            time=$(echo "$line" | awk '{print $3 " " $4}')
+            memory=$(echo "$line" | awk '{print $5 " " $6}')
+            allocs=$(echo "$line" | awk '{print $7 " " $8}')
+            echo "| $name | $time | $memory | $allocs |" >> performance_report.md
+          done
+          
+          echo "" >> performance_report.md
+          echo "### 🎯 性能目标对比" >> performance_report.md
+          echo "" >> performance_report.md
+          echo "根据ROADMAP中的性能目标:" >> performance_report.md
+          echo "- **启动时间目标:** < 50ms" >> performance_report.md
+          echo "- **内存占用目标:** < 8MB" >> performance_report.md
+          echo "- **终端创建目标:** < 10ms" >> performance_report.md
+          echo "- **会话切换目标:** < 5ms" >> performance_report.md
+          echo "" >> performance_report.md
+          
+          # 如果有回归报告，添加到性能报告中
+          if [ -f "benchmarks/results/regression_report.txt" ]; then
+            echo "### ⚠️ 性能回归检测结果" >> performance_report.md
+            echo "" >> performance_report.md
+            echo '```' >> performance_report.md
+            cat benchmarks/results/regression_report.txt >> performance_report.md
+            echo '```' >> performance_report.md
+          fi
+          
+          echo "性能报告生成完成"
+        fi
+    
+    - name: 📤 上传基准测试结果
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: benchmark-results-${{ github.sha }}
+        path: |
+          benchmarks/results/
+          performance_report.md
+        retention-days: 30
+    
+    - name: 💾 更新基线基准测试
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        current_file=$(ls benchmarks/results/current_*.txt | head -1)
+        if [ -f "$current_file" ]; then
+          echo "更新主分支基线基准测试结果..."
+          cp "$current_file" benchmarks/results/baseline.txt
+        fi
+    
+    - name: 📝 性能回归评论 (PR)
+      if: github.event_name == 'pull_request' && failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          let comment = '## ⚠️ 性能回归检测警告\n\n';
+          comment += `在这个 PR 中检测到性能回归。\n\n`;
+          comment += `**检测时间:** ${new Date().toISOString()}\n`;
+          comment += `**提交 SHA:** ${{ github.sha }}\n\n`;
+          
+          try {
+            if (fs.existsSync('benchmarks/results/regression_report.txt')) {
+              const regressionReport = fs.readFileSync('benchmarks/results/regression_report.txt', 'utf8');
+              comment += '### 详细回归报告\n\n```\n' + regressionReport + '\n```\n\n';
+            }
+          } catch (error) {
+            comment += '无法读取详细回归报告。\n\n';
+          }
+          
+          comment += '请检查性能相关的更改，确保没有引入不必要的性能损失。\n';
+          comment += '如果性能变化是预期的，请更新基线基准测试。';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+    
+    - name: 📊 性能提升评论 (PR)
+      if: github.event_name == 'pull_request' && success()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          // 检查是否有性能提升
+          let hasImprovement = false;
+          if (fs.existsSync('benchmarks/results/regression_report.txt')) {
+            const regressionReport = fs.readFileSync('benchmarks/results/regression_report.txt', 'utf8');
+            if (regressionReport.includes('IMPROVED')) {
+              hasImprovement = true;
+            }
+          }
+          
+          if (hasImprovement) {
+            let comment = '## 🚀 性能提升检测\n\n';
+            comment += `在这个 PR 中检测到性能提升！\n\n`;
+            comment += `**检测时间:** ${new Date().toISOString()}\n`;
+            comment += `**提交 SHA:** ${{ github.sha }}\n\n`;
+            comment += '### 性能改进详情\n\n';
+            
+            try {
+              const regressionReport = fs.readFileSync('benchmarks/results/regression_report.txt', 'utf8');
+              comment += '```\n' + regressionReport + '\n```\n\n';
+            } catch (error) {
+              comment += '无法读取详细性能报告。\n\n';
+            }
+            
+            comment += '感谢您对项目性能的改进! 🎉';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          }
+
+  performance-monitoring:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    needs: performance-benchmark
+    
+    steps:
+    - name: 📊 性能趋势分析
+      run: |
+        echo "执行每日性能趋势分析..."
+        echo "这里可以添加长期性能趋势分析逻辑"
+        echo "例如：与历史数据比较，生成性能趋势图表等"
+    
+    - name: 📧 性能警报
+      if: failure()
+      run: |
+        echo "发送性能警报..."
+        echo "可以集成 Slack、邮件等通知方式"
+        echo "当检测到严重性能回归时通知团队" 
