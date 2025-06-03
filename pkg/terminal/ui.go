@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-3 18:52:54
 * @Description: 终端用户界面的核心实现
  */
 
@@ -150,7 +150,15 @@ func (ui *UIRenderer) RenderWindow(window *Window) string {
 	return ui.generateOutput()
 }
 
-// calculatePaneLayouts 计算面板布局
+// calculatePaneLayouts 计算窗口中所有面板的布局信息
+//
+// 参数:
+//   - window: 包含要布局的面板的窗口对象
+//
+// 返回:
+//   - []PaneLayout: 每个面板的布局信息列表
+//
+// 该函数根据窗口的布局类型，计算每个面板的位置、尺寸和状态信息
 func (ui *UIRenderer) calculatePaneLayouts(window *Window) []PaneLayout {
 	if len(window.Panes) == 0 {
 		return []PaneLayout{}
@@ -184,7 +192,15 @@ func (ui *UIRenderer) calculatePaneLayouts(window *Window) []PaneLayout {
 	return layouts
 }
 
-// getPaneBuffer 获取面板缓冲区内容
+// getPaneBuffer 获取面板的缓冲区内容以供渲染
+//
+// 参数:
+//   - pane: 要获取缓冲区内容的面板对象
+//
+// 返回:
+//   - []string: 面板缓冲区的文本行列表
+//
+// 如果面板缓冲区为空，则返回包含命令提示符的默认内容
 func (ui *UIRenderer) getPaneBuffer(pane *Pane) []string {
 	if pane.Buffer == nil || len(pane.Buffer.Lines) == 0 {
 		return []string{"$ " + pane.Command}
@@ -198,7 +214,17 @@ func (ui *UIRenderer) getPaneBuffer(pane *Pane) []string {
 	return buffer
 }
 
-// layoutEven 均匀布局
+// layoutEven 计算均匀分布的面板布局
+//
+// 参数:
+//   - panes: 要布局的面板列表
+//   - width: 可用的总宽度
+//   - height: 可用的总高度
+//
+// 返回:
+//   - []PaneLayout: 每个面板的布局信息
+//
+// 该布局将所有面板水平均匀分布，每个面板具有相同的宽度
 func (ui *UIRenderer) layoutEven(panes []*Pane, width, height int) []PaneLayout {
 	if len(panes) == 0 {
 		return []PaneLayout{}
@@ -219,7 +245,18 @@ func (ui *UIRenderer) layoutEven(panes []*Pane, width, height int) []PaneLayout 
 	return layouts
 }
 
-// layoutMainVertical 主垂直布局
+// layoutMainVertical 计算主垂直分割布局
+//
+// 参数:
+//   - panes: 要布局的面板列表
+//   - width: 可用的总宽度
+//   - height: 可用的总高度
+//
+// 返回:
+//   - []PaneLayout: 每个面板的布局信息
+//
+// 该布局将第一个面板作为主面板占据左侧2/3宽度，
+// 其余面板垂直排列在右侧1/3宽度区域
 func (ui *UIRenderer) layoutMainVertical(panes []*Pane, width, height int) []PaneLayout {
 	if len(panes) == 0 {
 		return []PaneLayout{}
@@ -234,29 +271,40 @@ func (ui *UIRenderer) layoutMainVertical(panes []*Pane, width, height int) []Pan
 		return layouts
 	}
 
-	mainWidth := width * 2 / 3
-	sideWidth := width - mainWidth
-	sideHeight := height / (len(panes) - 1)
+	mainPaneWidth := width * 2 / 3
+	sidePaneWidth := width - mainPaneWidth
+	sidePaneHeight := height / (len(panes) - 1)
 
-	// 主面板
+	// 主面板（占据左侧大部分空间）
 	layouts[0] = PaneLayout{
-		X: 0, Y: 0, Width: mainWidth, Height: height,
+		X: 0, Y: 0, Width: mainPaneWidth, Height: height,
 	}
 
-	// 侧面板
+	// 侧面板（垂直排列在右侧）
 	for i := 1; i < len(panes); i++ {
 		layouts[i] = PaneLayout{
-			X:      mainWidth,
-			Y:      (i - 1) * sideHeight,
-			Width:  sideWidth,
-			Height: sideHeight,
+			X:      mainPaneWidth,
+			Y:      (i - 1) * sidePaneHeight,
+			Width:  sidePaneWidth,
+			Height: sidePaneHeight,
 		}
 	}
 
 	return layouts
 }
 
-// layoutMainHorizontal 主水平布局
+// layoutMainHorizontal 计算主水平分割布局
+//
+// 参数:
+//   - panes: 要布局的面板列表
+//   - width: 可用的总宽度
+//   - height: 可用的总高度
+//
+// 返回:
+//   - []PaneLayout: 每个面板的布局信息
+//
+// 该布局将第一个面板作为主面板占据上方2/3高度，
+// 其余面板水平排列在下方1/3高度区域
 func (ui *UIRenderer) layoutMainHorizontal(panes []*Pane, width, height int) []PaneLayout {
 	if len(panes) == 0 {
 		return []PaneLayout{}
@@ -271,29 +319,40 @@ func (ui *UIRenderer) layoutMainHorizontal(panes []*Pane, width, height int) []P
 		return layouts
 	}
 
-	mainHeight := height * 2 / 3
-	sideHeight := height - mainHeight
-	sideWidth := width / (len(panes) - 1)
+	mainPaneHeight := height * 2 / 3
+	sidePaneHeight := height - mainPaneHeight
+	sidePaneWidth := width / (len(panes) - 1)
 
-	// 主面板
+	// 主面板（占据上方大部分空间）
 	layouts[0] = PaneLayout{
-		X: 0, Y: 0, Width: width, Height: mainHeight,
+		X: 0, Y: 0, Width: width, Height: mainPaneHeight,
 	}
 
-	// 侧面板
+	// 侧面板（水平排列在下方）
 	for i := 1; i < len(panes); i++ {
 		layouts[i] = PaneLayout{
-			X:      (i - 1) * sideWidth,
-			Y:      mainHeight,
-			Width:  sideWidth,
-			Height: sideHeight,
+			X:      (i - 1) * sidePaneWidth,
+			Y:      mainPaneHeight,
+			Width:  sidePaneWidth,
+			Height: sidePaneHeight,
 		}
 	}
 
 	return layouts
 }
 
-// layoutTiled 平铺布局
+// layoutTiled 计算平铺网格布局
+//
+// 参数:
+//   - panes: 要布局的面板列表
+//   - width: 可用的总宽度
+//   - height: 可用的总高度
+//
+// 返回:
+//   - []PaneLayout: 每个面板的布局信息
+//
+// 该布局将面板排列成尽可能接近正方形的网格，
+// 自动计算最优的行列数来容纳所有面板
 func (ui *UIRenderer) layoutTiled(panes []*Pane, width, height int) []PaneLayout {
 	if len(panes) == 0 {
 		return []PaneLayout{}
@@ -301,22 +360,23 @@ func (ui *UIRenderer) layoutTiled(panes []*Pane, width, height int) []PaneLayout
 
 	layouts := make([]PaneLayout, len(panes))
 
-	cols := 1
-	for cols*cols < len(panes) {
-		cols++
+	// 计算最优的列数（尽可能接近正方形网格）
+	numColumns := 1
+	for numColumns*numColumns < len(panes) {
+		numColumns++
 	}
-	rows := (len(panes) + cols - 1) / cols
+	numRows := (len(panes) + numColumns - 1) / numColumns
 
-	paneWidth := width / cols
-	paneHeight := height / rows
+	paneWidth := width / numColumns
+	paneHeight := height / numRows
 
 	for i := range layouts {
-		col := i % cols
-		row := i / cols
+		columnIndex := i % numColumns
+		rowIndex := i / numColumns
 
 		layouts[i] = PaneLayout{
-			X:      col * paneWidth,
-			Y:      row * paneHeight,
+			X:      columnIndex * paneWidth,
+			Y:      rowIndex * paneHeight,
 			Width:  paneWidth,
 			Height: paneHeight,
 		}

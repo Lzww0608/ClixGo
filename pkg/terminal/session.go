@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-1 21:09:43
+* @LastEditTime: 2025-6-3 18:52:18
 * @Description: 终端会话管理的核心实现
  */
 
@@ -588,7 +588,7 @@ func (sm *SessionManager) RenameSession(sessionID, newName string) error {
 	// 检查新名称是否已存在
 	for _, s := range sm.sessions {
 		if s.Name == newName && s.ID != sessionID {
-			return fmt.Errorf("session with name '%s' already exists", newName)
+			return fmt.Errorf("会话已存在: '%s'", newName)
 		}
 	}
 
@@ -796,7 +796,14 @@ func (sm *SessionManager) DeleteSavedSession(sessionName string) error {
 	return nil
 }
 
-// AutoSaveSession 自动保存会话
+// AutoSaveSession 启动会话的自动保存服务
+//
+// 参数:
+//   - sessionID: 要自动保存的会话ID
+//   - interval: 自动保存的时间间隔
+//
+// 该函数会在后台启动一个goroutine，定期保存指定会话的状态
+// 注意：调用者需要负责停止自动保存服务以避免goroutine泄漏
 func (sm *SessionManager) AutoSaveSession(sessionID string, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -816,12 +823,21 @@ func (sm *SessionManager) AutoSaveSession(sessionID string, interval time.Durati
 	}
 }
 
-// extractSessionNameFromPath 从文件路径提取会话名称
+// extractSessionNameFromPath 从文件路径中提取会话名称
+//
+// 参数:
+//   - filepath: 会话快照文件的完整路径
+//
+// 返回:
+//   - string: 提取的会话名称
+//
+// 该函数解析快照文件名格式（sessionName_YYYYMMDD_HHMMSS.json），
+// 提取其中的会话名称部分，自动去除时间戳和扩展名
 func extractSessionNameFromPath(filepath string) string {
 	filename := filepath
 	if strings.Contains(filepath, "/") {
-		parts := strings.Split(filepath, "/")
-		filename = parts[len(parts)-1]
+		pathParts := strings.Split(filepath, "/")
+		filename = pathParts[len(pathParts)-1]
 	}
 
 	// 移除扩展名
@@ -831,18 +847,18 @@ func extractSessionNameFromPath(filepath string) string {
 
 	// 提取会话名称（格式：sessionName_YYYYMMDD_HHMMSS）
 	// 时间戳格式固定为：YYYYMMDD_HHMMSS，所以我们需要移除最后两个部分
-	parts := strings.Split(filename, "_")
-	if len(parts) >= 3 {
+	filenameParts := strings.Split(filename, "_")
+	if len(filenameParts) >= 3 {
 		// 检查最后两个部分是否是时间戳格式
-		lastPart := parts[len(parts)-1]
-		secondLastPart := parts[len(parts)-2]
+		timePart := filenameParts[len(filenameParts)-1] // HHMMSS
+		datePart := filenameParts[len(filenameParts)-2] // YYYYMMDD
 
 		// 检查是否是时间戳格式：YYYYMMDD_HHMMSS
-		if len(lastPart) == 6 && len(secondLastPart) == 8 {
+		if len(timePart) == 6 && len(datePart) == 8 {
 			// 验证是否都是数字
-			if isNumeric(lastPart) && isNumeric(secondLastPart) {
-				// 移除时间戳部分
-				return strings.Join(parts[:len(parts)-2], "_")
+			if isNumericString(timePart) && isNumericString(datePart) {
+				// 移除时间戳部分，保留会话名称
+				return strings.Join(filenameParts[:len(filenameParts)-2], "_")
 			}
 		}
 	}
@@ -851,44 +867,68 @@ func extractSessionNameFromPath(filepath string) string {
 	return filename
 }
 
-// extractSessionNameFromSnapshot 从快照文件名提取会话名称
+// extractSessionNameFromSnapshot 从快照文件名中提取会话名称
+//
+// 参数:
+//   - snapshot: 快照文件名（不包含路径）
+//
+// 返回:
+//   - string: 提取的会话名称
+//
+// 该函数专门处理快照文件名，去除时间戳和扩展名，保留核心的会话名称
 func extractSessionNameFromSnapshot(snapshot string) string {
 	// 移除扩展名
-	filename := strings.TrimSuffix(snapshot, ".json")
+	filenameWithoutExt := strings.TrimSuffix(snapshot, ".json")
 
 	// 提取会话名称（格式：sessionName_YYYYMMDD_HHMMSS）
 	// 时间戳格式固定为：YYYYMMDD_HHMMSS，所以我们需要移除最后两个部分
-	parts := strings.Split(filename, "_")
-	if len(parts) >= 3 {
+	nameParts := strings.Split(filenameWithoutExt, "_")
+	if len(nameParts) >= 3 {
 		// 检查最后两个部分是否是时间戳格式
-		lastPart := parts[len(parts)-1]
-		secondLastPart := parts[len(parts)-2]
+		timeComponent := nameParts[len(nameParts)-1] // HHMMSS
+		dateComponent := nameParts[len(nameParts)-2] // YYYYMMDD
 
 		// 检查是否是时间戳格式：YYYYMMDD_HHMMSS
-		if len(lastPart) == 6 && len(secondLastPart) == 8 {
+		if len(timeComponent) == 6 && len(dateComponent) == 8 {
 			// 验证是否都是数字
-			if isNumeric(lastPart) && isNumeric(secondLastPart) {
-				// 移除时间戳部分
-				return strings.Join(parts[:len(parts)-2], "_")
+			if isNumericString(timeComponent) && isNumericString(dateComponent) {
+				// 移除时间戳部分，保留会话名称
+				return strings.Join(nameParts[:len(nameParts)-2], "_")
 			}
 		}
 	}
 
 	// 如果不是标准时间戳格式，返回原始文件名（不移除任何部分）
-	return filename
+	return filenameWithoutExt
 }
 
-// isNumeric 检查字符串是否只包含数字
-func isNumeric(s string) bool {
-	for _, r := range s {
-		if r < '0' || r > '9' {
+// isNumericString 检查字符串是否只包含数字字符
+//
+// 参数:
+//   - s: 要检查的字符串
+//
+// 返回:
+//   - bool: true表示字符串只包含数字，false表示包含非数字字符
+//
+// 该函数用于验证时间戳部分的格式是否正确
+func isNumericString(s string) bool {
+	for _, char := range s {
+		if char < '0' || char > '9' {
 			return false
 		}
 	}
 	return true
 }
 
-// generateSessionName 生成会话名称
+// generateSessionName 生成唯一的会话名称
+//
+// 参数:
+//   - name: 用户指定的会话名称，可以为空
+//
+// 返回:
+//   - string: 生成的会话名称
+//
+// 如果用户提供了名称则使用用户名称，否则自动生成一个唯一名称
 func (sm *SessionManager) generateSessionName(name string) string {
 	if utils.Strings.IsNotEmpty(name) {
 		return name
@@ -896,19 +936,36 @@ func (sm *SessionManager) generateSessionName(name string) string {
 	return fmt.Sprintf("session-%d", len(sm.sessions)+1)
 }
 
-// sessionExists 检查会话是否已存在
+// sessionExists 检查指定名称的会话是否已存在
+//
+// 参数:
+//   - name: 要检查的会话名称
+//
+// 返回:
+//   - bool: true表示会话已存在，false表示不存在
+//
+// 该函数通过遍历所有现有会话来进行名称冲突检查
 func (sm *SessionManager) sessionExists(name string) bool {
-	for _, session := range sm.sessions {
-		if session.Name == name {
+	for _, existingSession := range sm.sessions {
+		if existingSession.Name == name {
 			return true
 		}
 	}
 	return false
 }
 
-// buildSession 构建会话对象
+// buildSession 构建新的会话对象
+//
+// 参数:
+//   - name: 会话名称
+//
+// 返回:
+//   - *Session: 创建的会话对象
+//   - error: 构建过程中的错误
+//
+// 该函数创建一个完整初始化的会话对象，设置所有必要的默认值
 func (sm *SessionManager) buildSession(name string) (*Session, error) {
-	session := &Session{
+	newSession := &Session{
 		ID:           uuid.New().String(),
 		Name:         name,
 		Status:       SessionActive,
@@ -917,5 +974,5 @@ func (sm *SessionManager) buildSession(name string) (*Session, error) {
 		Windows:      make([]*Window, 0),
 		ActiveWindow: 0,
 	}
-	return session, nil
+	return newSession, nil
 }

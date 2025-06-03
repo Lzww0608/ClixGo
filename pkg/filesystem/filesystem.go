@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-06-03 19:25:00
 * @Description: 文件系统操作的核心实现，提供文件管理、权限控制等功能
  */
 
@@ -27,127 +27,156 @@ import (
 	"time"
 )
 
-// FileInfo 表示文件信息
+// FileInfo 文件信息结构体
+// 包含文件的基本属性、权限、校验和等详细信息
 type FileInfo struct {
-	Name        string
-	Path        string
-	Size        int64
-	Mode        fs.FileMode
-	ModTime     time.Time
-	IsDir       bool
-	IsSymlink   bool
-	Owner       string
-	Group       string
-	Checksum    map[string]string
-	Permissions string
-	ContentType string
+	Name        string            // 文件名
+	Path        string            // 文件完整路径（符号链接会显示目标）
+	Size        int64             // 文件大小（字节）
+	Mode        fs.FileMode       // 文件模式和权限
+	ModTime     time.Time         // 最后修改时间
+	IsDir       bool              // 是否为目录
+	IsSymlink   bool              // 是否为符号链接
+	Owner       string            // 文件所有者用户ID
+	Group       string            // 文件所属组ID
+	Checksum    map[string]string // 文件校验和（MD5、SHA1、SHA256）
+	Permissions string            // 权限字符串表示
+	ContentType string            // 文件MIME类型
 }
 
-// FileOperation 表示文件操作结果
+// FileOperation 文件操作结果
+// 封装操作成功状态、消息和错误信息
 type FileOperation struct {
-	Success bool
-	Message string
-	Error   error
+	Success bool   // 操作是否成功
+	Message string // 操作结果消息
+	Error   error  // 错误信息（如果有）
 }
 
-// ListFiles 列出目录内容
+// ListFiles 列出指定目录的文件和子目录
+//
+// 参数:
+//   - path: 目录路径
+//   - recursive: 是否递归列出子目录内容
+//   - showHidden: 是否显示隐藏文件（以.开头的文件）
+//
+// 返回:
+//   - []FileInfo: 文件信息列表
+//   - error: 列举过程中的错误，nil表示成功
+//
+// 该函数会收集每个文件的详细信息，包括校验和、权限、MIME类型等
 func ListFiles(path string, recursive bool, showHidden bool) ([]FileInfo, error) {
-	path = filepath.Clean(path)
-	var files []FileInfo
+	cleanedPath := filepath.Clean(path)
+	var fileInfoList []FileInfo
 
 	// 确保路径存在
-	_, err := os.Stat(path)
+	_, err := os.Stat(cleanedPath)
 	if err != nil {
 		return nil, err
 	}
 
-	walkFunc := func(filePath string, info fs.FileInfo, err error) error {
+	walkFunction := func(currentFilePath string, fileInfo fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		// 跳过隐藏文件（如果需要）
-		if !showHidden && strings.HasPrefix(info.Name(), ".") {
-			if info.IsDir() {
+		if !showHidden && strings.HasPrefix(fileInfo.Name(), ".") {
+			if fileInfo.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
 		// 如果不是递归模式，只处理当前目录下的文件和目录
-		if !recursive && filepath.Dir(filePath) != path {
+		if !recursive && filepath.Dir(currentFilePath) != cleanedPath {
 			// 如果是子目录，跳过其内容
-			if info.IsDir() && filePath != path {
+			if fileInfo.IsDir() && currentFilePath != cleanedPath {
 				return filepath.SkipDir
 			}
 			// 如果不是当前目录下的文件，跳过
-			if filepath.Dir(filePath) != path {
+			if filepath.Dir(currentFilePath) != cleanedPath {
 				return nil
 			}
 		}
 
-		fileInfo := FileInfo{
-			Name:    info.Name(),
-			Path:    filePath,
-			Size:    info.Size(),
-			Mode:    info.Mode(),
-			ModTime: info.ModTime(),
-			IsDir:   info.IsDir(),
+		detailedFileInfo := FileInfo{
+			Name:    fileInfo.Name(),
+			Path:    currentFilePath,
+			Size:    fileInfo.Size(),
+			Mode:    fileInfo.Mode(),
+			ModTime: fileInfo.ModTime(),
+			IsDir:   fileInfo.IsDir(),
 		}
 
 		// 获取符号链接信息
-		if info.Mode()&fs.ModeSymlink != 0 {
-			fileInfo.IsSymlink = true
-			if target, err := os.Readlink(filePath); err == nil {
-				fileInfo.Path = fmt.Sprintf("%s -> %s", filePath, target)
+		if fileInfo.Mode()&fs.ModeSymlink != 0 {
+			detailedFileInfo.IsSymlink = true
+			if linkTarget, err := os.Readlink(currentFilePath); err == nil {
+				detailedFileInfo.Path = fmt.Sprintf("%s -> %s", currentFilePath, linkTarget)
 			}
 		}
 
 		// 获取文件所有者信息
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			fileInfo.Owner = fmt.Sprintf("%d", stat.Uid)
-			fileInfo.Group = fmt.Sprintf("%d", stat.Gid)
+		if statInfo, ok := fileInfo.Sys().(*syscall.Stat_t); ok {
+			detailedFileInfo.Owner = fmt.Sprintf("%d", statInfo.Uid)
+			detailedFileInfo.Group = fmt.Sprintf("%d", statInfo.Gid)
 		}
 
 		// 计算文件校验和
-		if !info.IsDir() {
-			fileInfo.Checksum = calculateChecksums(filePath)
+		if !fileInfo.IsDir() {
+			detailedFileInfo.Checksum = calculateChecksums(currentFilePath)
 		}
 
 		// 获取文件权限
-		fileInfo.Permissions = info.Mode().String()
+		detailedFileInfo.Permissions = fileInfo.Mode().String()
 
 		// 获取文件类型
-		if !info.IsDir() {
-			fileInfo.ContentType = detectContentType(filePath)
+		if !fileInfo.IsDir() {
+			detailedFileInfo.ContentType = detectContentType(currentFilePath)
 		}
 
-		files = append(files, fileInfo)
+		fileInfoList = append(fileInfoList, detailedFileInfo)
 		return nil
 	}
 
-	if err := filepath.Walk(path, walkFunc); err != nil {
+	if err := filepath.Walk(cleanedPath, walkFunction); err != nil {
 		return nil, err
 	}
 
-	return files, nil
+	return fileInfoList, nil
 }
 
 // CopyFile 复制文件或目录
+//
+// 参数:
+//   - src: 源文件或目录路径
+//   - dst: 目标文件或目录路径
+//
+// 返回:
+//   - FileOperation: 操作结果，包含成功状态和错误信息
+//
+// 如果源是目录，会递归复制整个目录树
 func CopyFile(src, dst string) FileOperation {
-	info, err := os.Stat(src)
+	sourceInfo, err := os.Stat(src)
 	if err != nil {
 		return FileOperation{Success: false, Error: err}
 	}
 
-	if info.IsDir() {
+	if sourceInfo.IsDir() {
 		return copyDirectory(src, dst)
 	}
 
 	return copySingleFile(src, dst)
 }
 
-// MoveFile 移动文件或目录
+// MoveFile 移动或重命名文件或目录
+//
+// 参数:
+//   - src: 源文件或目录路径
+//   - dst: 目标文件或目录路径
+//
+// 返回:
+//   - FileOperation: 操作结果，包含成功状态和错误信息
 func MoveFile(src, dst string) FileOperation {
 	err := os.Rename(src, dst)
 	if err != nil {
@@ -157,17 +186,26 @@ func MoveFile(src, dst string) FileOperation {
 }
 
 // DeleteFile 删除文件或目录
+//
+// 参数:
+//   - path: 要删除的文件或目录路径
+//   - recursive: 是否递归删除目录内容
+//
+// 返回:
+//   - FileOperation: 操作结果，包含成功状态和错误信息
+//
+// 对于目录，如果recursive为false且目录非空，操作会失败
 func DeleteFile(path string, recursive bool) FileOperation {
-	info, err := os.Stat(path)
+	targetInfo, err := os.Stat(path)
 	if err != nil {
 		return FileOperation{Success: false, Error: err}
 	}
 
-	if info.IsDir() && !recursive {
+	if targetInfo.IsDir() && !recursive {
 		return FileOperation{Success: false, Error: fmt.Errorf("目录非空，请使用递归删除")}
 	}
 
-	if info.IsDir() {
+	if targetInfo.IsDir() {
 		err = os.RemoveAll(path)
 	} else {
 		err = os.Remove(path)
@@ -180,6 +218,13 @@ func DeleteFile(path string, recursive bool) FileOperation {
 }
 
 // CreateDirectory 创建目录
+//
+// 参数:
+//   - path: 要创建的目录路径
+//   - parents: 是否创建父目录（类似mkdir -p）
+//
+// 返回:
+//   - FileOperation: 操作结果，包含成功状态和错误信息
 func CreateDirectory(path string, parents bool) FileOperation {
 	var err error
 	if parents {
@@ -194,14 +239,22 @@ func CreateDirectory(path string, parents bool) FileOperation {
 	return FileOperation{Success: true, Message: "目录创建成功"}
 }
 
-// ChangePermissions 修改文件权限
+// ChangePermissions 修改文件或目录权限
+//
+// 参数:
+//   - path: 文件或目录路径
+//   - mode: 新的权限模式
+//   - recursive: 是否递归修改目录内容权限
+//
+// 返回:
+//   - FileOperation: 操作结果，包含成功状态和错误信息
 func ChangePermissions(path string, mode os.FileMode, recursive bool) FileOperation {
 	if recursive {
-		err := filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+		err := filepath.Walk(path, func(currentPath string, info fs.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-			return os.Chmod(path, mode)
+			return os.Chmod(currentPath, mode)
 		})
 		if err != nil {
 			return FileOperation{Success: false, Error: err}

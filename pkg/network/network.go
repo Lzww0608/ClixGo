@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-3 18:53:53
 * @Description: 网络工具和监控功能的核心实现
  */
 
@@ -155,7 +155,15 @@ func Traceroute(host string, maxHops int) ([]TracerouteResult, error) {
 	return results, nil
 }
 
-// 添加校验和计算函数
+// calculateChecksum 计算网络数据包的校验和
+//
+// 参数:
+//   - bytes: 要计算校验和的字节数组
+//
+// 返回:
+//   - uint16: 计算得到的16位校验和值
+//
+// 该函数实现了标准的Internet校验和算法，用于TCP/UDP数据包验证
 func calculateChecksum(bytes []byte) uint16 {
 	length := len(bytes)
 	var sum uint32
@@ -170,7 +178,16 @@ func calculateChecksum(bytes []byte) uint16 {
 	return uint16(^sum)
 }
 
-// DNSLookup 执行DNS查询
+// DNSLookup 执行DNS域名解析查询
+//
+// 参数:
+//   - host: 要解析的域名或主机名
+//
+// 返回:
+//   - []string: 解析得到的IP地址列表
+//   - error: 解析过程中的错误
+//
+// 该函数查询指定域名对应的所有IP地址（包括IPv4和IPv6）
 func DNSLookup(host string) ([]string, error) {
 	ips, err := net.LookupIP(host)
 	if err != nil {
@@ -184,7 +201,17 @@ func DNSLookup(host string) ([]string, error) {
 	return result, nil
 }
 
-// HTTPGet 发送HTTP GET请求
+// HTTPGet 发送HTTP GET请求并获取响应内容
+//
+// 参数:
+//   - url: 要请求的URL地址
+//   - timeout: 请求超时时间
+//
+// 返回:
+//   - string: HTTP响应的内容体
+//   - error: 请求过程中的错误
+//
+// 该函数创建HTTP客户端，发送GET请求，并返回响应的文本内容
 func HTTPGet(url string, timeout time.Duration) (string, error) {
 	client := &http.Client{
 		Timeout: timeout,
@@ -204,7 +231,18 @@ func HTTPGet(url string, timeout time.Duration) (string, error) {
 	return string(body), nil
 }
 
-// CheckPort 检查端口是否开放
+// CheckPort 检查指定主机的端口是否开放并可连接
+//
+// 参数:
+//   - host: 目标主机地址（IP或域名）
+//   - port: 要检查的端口号
+//   - timeout: 连接超时时间
+//
+// 返回:
+//   - bool: true表示端口开放，false表示端口关闭或不可达
+//   - error: 检查过程中的错误（连接失败不算错误）
+//
+// 该函数通过尝试TCP连接来检测端口状态，适用于服务可用性检查
 func CheckPort(host string, port int, timeout time.Duration) (bool, error) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
 	if err != nil {
@@ -214,38 +252,60 @@ func CheckPort(host string, port int, timeout time.Duration) (bool, error) {
 	return true, nil
 }
 
-// IPInfo 表示IP地址的详细信息
+// IPInfo 包含IP地址的地理位置和网络信息
+// 提供IP地址的详细元数据，用于地理定位和网络分析
 type IPInfo struct {
-	IP      string
-	Country string
-	Region  string
-	City    string
-	ISP     string
+	IP      string // IP地址
+	Country string // 所属国家
+	Region  string // 所属地区/省份
+	City    string // 所属城市
+	ISP     string // 互联网服务提供商
 }
 
-// GetIPInfo 获取IP地址的详细信息
+// GetIPInfo 获取IP地址的详细地理位置和网络信息
+//
+// 参数:
+//   - ip: 要查询的IP地址
+//
+// 返回:
+//   - *IPInfo: 包含地理位置和ISP信息的结构体
+//   - error: 查询过程中的错误
+//
+// 该函数通过第三方API（ip-api.com）查询IP地址的详细信息，
+// 包括国家、地区、城市和ISP等元数据
 func GetIPInfo(ip string) (*IPInfo, error) {
 	// 这里使用ip-api.com的API
-	url := fmt.Sprintf("http://ip-api.com/json/%s", ip)
+	apiURL := fmt.Sprintf("http://ip-api.com/json/%s", ip)
 	client := &http.Client{
 		Timeout: time.Second * 5,
 	}
 
-	resp, err := client.Get(url)
+	resp, err := client.Get(apiURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var info IPInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	var ipInfo IPInfo
+	if err := json.NewDecoder(resp.Body).Decode(&ipInfo); err != nil {
 		return nil, err
 	}
 
-	return &info, nil
+	return &ipInfo, nil
 }
 
-// DownloadFile 下载文件
+// DownloadFile 从指定URL下载文件到本地存储
+//
+// 参数:
+//   - url: 文件下载地址
+//   - filename: 本地保存的文件名
+//   - timeout: 下载超时时间
+//
+// 返回:
+//   - error: 下载过程中的错误
+//
+// 该函数支持大文件下载，会显示下载进度条，
+// 适用于网络工具的文件传输功能
 func DownloadFile(url, filename string, timeout time.Duration) error {
 	client := &http.Client{
 		Timeout: timeout,
@@ -263,22 +323,33 @@ func DownloadFile(url, filename string, timeout time.Duration) error {
 	}
 	defer file.Close()
 
-	bar := progressbar.DefaultBytes(
+	progressBar := progressbar.DefaultBytes(
 		resp.ContentLength,
 		"下载中",
 	)
 
-	_, err = io.Copy(io.MultiWriter(file, bar), resp.Body)
+	_, err = io.Copy(io.MultiWriter(file, progressBar), resp.Body)
 	return err
 }
 
-// SSLInfo 表示SSL证书信息
+// SSLInfo 包含SSL/TLS证书的基本信息
+// 用于证书验证和安全检查
 type SSLInfo struct {
-	Issuer string
-	Expiry time.Time
+	Issuer string    // 证书颁发机构
+	Expiry time.Time // 证书过期时间
 }
 
-// CheckSSL 检查SSL证书
+// CheckSSL 检查指定主机的SSL/TLS证书信息
+//
+// 参数:
+//   - host: 要检查的主机名（不包含端口，默认使用443端口）
+//
+// 返回:
+//   - *SSLInfo: 包含证书颁发机构和过期时间的信息
+//   - error: 证书检查过程中的错误
+//
+// 该函数连接到主机的HTTPS端口，获取SSL证书的基本信息，
+// 用于证书有效性检查和安全审计
 func CheckSSL(host string) (*SSLInfo, error) {
 	conn, err := tls.Dial("tcp", host+":443", &tls.Config{
 		InsecureSkipVerify: true,

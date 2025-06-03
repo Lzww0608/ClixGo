@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-5-31 22:15:40
+* @LastEditTime: 2025-06-03 19:35:00
 * @Description: 性能分析器的核心实现
  */
 
@@ -22,35 +22,37 @@ import (
 )
 
 // TaskPerformanceAnalyzer 任务执行性能分析器
+// 提供实时性能监控、指标收集、告警和分析功能
 type TaskPerformanceAnalyzer struct {
-	mu             sync.RWMutex
-	isRunning      bool
-	isStopping     bool
-	ctx            context.Context
-	cancel         context.CancelFunc
-	config         AnalyzerConfig
-	metrics        map[string]*TaskMetrics
-	systemBaseline *SystemMetrics
-	updateChan     chan TaskMetrics
-	errorChan      chan error
-	alertChan      chan PerformanceAlert
+	mu             sync.RWMutex            // 读写锁保护并发访问
+	isRunning      bool                    // 分析器运行状态
+	isStopping     bool                    // 分析器停止状态
+	ctx            context.Context         // 上下文控制
+	cancel         context.CancelFunc      // 取消函数
+	config         AnalyzerConfig          // 分析器配置
+	metrics        map[string]*TaskMetrics // 任务指标存储
+	systemBaseline *SystemMetrics          // 系统基线指标
+	updateChan     chan TaskMetrics        // 指标更新通道（外部）
+	errorChan      chan error              // 错误通道（外部）
+	alertChan      chan PerformanceAlert   // 告警通道（外部）
 
 	// 添加goroutine管理
-	activeGoroutines sync.WaitGroup
+	activeGoroutines sync.WaitGroup // 活跃goroutine计数
 
 	// 内部通道，用于安全发送
-	internalUpdateChan chan TaskMetrics
-	internalErrorChan  chan error
-	internalAlertChan  chan PerformanceAlert
+	internalUpdateChan chan TaskMetrics      // 内部指标更新通道
+	internalErrorChan  chan error            // 内部错误通道
+	internalAlertChan  chan PerformanceAlert // 内部告警通道
 
 	// 原子标志防止向已关闭通道发送数据
 	channelsClosed int32 // 0: 开放, 1: 已关闭
 
 	// 确保通道只关闭一次
-	closeOnce sync.Once
+	closeOnce sync.Once // 关闭保护
 }
 
 // AnalyzerConfig 性能分析器配置
+// 定义分析器的运行参数和告警阈值
 type AnalyzerConfig struct {
 	SampleInterval  time.Duration   `json:"sample_interval"`  // 采样间隔
 	Timeout         time.Duration   `json:"timeout"`          // 操作超时时间
@@ -61,6 +63,7 @@ type AnalyzerConfig struct {
 }
 
 // AlertThresholds 告警阈值配置
+// 定义各种性能指标的告警触发条件
 type AlertThresholds struct {
 	CPUUsagePercent float64 `json:"cpu_usage_percent"` // CPU使用率阈值
 	MemoryUsageMB   float64 `json:"memory_usage_mb"`   // 内存使用阈值(MB)
@@ -70,21 +73,23 @@ type AlertThresholds struct {
 }
 
 // TaskMetrics 任务性能指标
+// 包含任务执行过程中的完整性能数据
 type TaskMetrics struct {
-	TaskID         string                 `json:"task_id"`
-	TaskName       string                 `json:"task_name"`
-	StartTime      time.Time              `json:"start_time"`
-	EndTime        time.Time              `json:"end_time"`
-	Duration       time.Duration          `json:"duration"`
-	CPUUsage       CPUMetrics             `json:"cpu_usage"`
-	MemoryUsage    MemoryMetrics          `json:"memory_usage"`
-	SystemMetrics  SystemMetrics          `json:"system_metrics"`
-	RuntimeMetrics RuntimeMetrics         `json:"runtime_metrics"`
-	CustomMetrics  map[string]interface{} `json:"custom_metrics"`
-	Timestamp      time.Time              `json:"timestamp"`
+	TaskID         string                 `json:"task_id"`         // 任务唯一标识
+	TaskName       string                 `json:"task_name"`       // 任务名称
+	StartTime      time.Time              `json:"start_time"`      // 开始时间
+	EndTime        time.Time              `json:"end_time"`        // 结束时间
+	Duration       time.Duration          `json:"duration"`        // 执行时长
+	CPUUsage       CPUMetrics             `json:"cpu_usage"`       // CPU使用指标
+	MemoryUsage    MemoryMetrics          `json:"memory_usage"`    // 内存使用指标
+	SystemMetrics  SystemMetrics          `json:"system_metrics"`  // 系统指标
+	RuntimeMetrics RuntimeMetrics         `json:"runtime_metrics"` // 运行时指标
+	CustomMetrics  map[string]interface{} `json:"custom_metrics"`  // 自定义指标
+	Timestamp      time.Time              `json:"timestamp"`       // 时间戳
 }
 
 // CPUMetrics CPU使用指标
+// 记录CPU在用户态和系统态的使用情况
 type CPUMetrics struct {
 	UserPercent   float64   `json:"user_percent"`   // 用户态CPU使用率
 	SystemPercent float64   `json:"system_percent"` // 系统态CPU使用率
@@ -93,6 +98,7 @@ type CPUMetrics struct {
 }
 
 // MemoryMetrics 内存使用指标
+// 记录进程和系统的内存使用情况
 type MemoryMetrics struct {
 	RSS         uint64  `json:"rss"`          // 常驻内存集
 	VMS         uint64  `json:"vms"`          // 虚拟内存大小
@@ -102,6 +108,7 @@ type MemoryMetrics struct {
 }
 
 // SystemMetrics 系统指标
+// 记录整个系统的资源使用情况
 type SystemMetrics struct {
 	TotalCPUPercent    float64 `json:"total_cpu_percent"`    // 系统总CPU使用率
 	TotalMemoryUsedMB  uint64  `json:"total_memory_used_mb"` // 系统总内存使用(MB)
@@ -113,6 +120,7 @@ type SystemMetrics struct {
 }
 
 // RuntimeMetrics Go运行时指标
+// 记录Go程序的运行时状态和垃圾回收信息
 type RuntimeMetrics struct {
 	GoroutineCount int     `json:"goroutine_count"` // 协程数量
 	HeapAllocMB    float64 `json:"heap_alloc_mb"`   // 堆内存分配(MB)
@@ -123,32 +131,42 @@ type RuntimeMetrics struct {
 }
 
 // PerformanceAlert 性能告警
+// 当性能指标超过阈值时生成的告警信息
 type PerformanceAlert struct {
-	ID         string    `json:"id"`
-	Type       string    `json:"type"`
-	Severity   string    `json:"severity"`
-	Message    string    `json:"message"`
-	TaskID     string    `json:"task_id"`
-	MetricName string    `json:"metric_name"`
-	Value      float64   `json:"value"`
-	Threshold  float64   `json:"threshold"`
-	Timestamp  time.Time `json:"timestamp"`
+	ID         string    `json:"id"`          // 告警唯一标识
+	Type       string    `json:"type"`        // 告警类型
+	Severity   string    `json:"severity"`    // 严重程度
+	Message    string    `json:"message"`     // 告警消息
+	TaskID     string    `json:"task_id"`     // 相关任务ID
+	MetricName string    `json:"metric_name"` // 指标名称
+	Value      float64   `json:"value"`       // 当前值
+	Threshold  float64   `json:"threshold"`   // 阈值
+	Timestamp  time.Time `json:"timestamp"`   // 告警时间
 }
 
 // TaskExecutionContext 任务执行上下文
+// 跟踪单个任务执行过程中的状态和指标
 type TaskExecutionContext struct {
-	TaskID     string
-	TaskName   string
-	StartTime  time.Time
-	process    *process.Process
-	initialMem *runtime.MemStats
-	samples    []TaskMetrics
-	mu         sync.RWMutex
+	TaskID     string            // 任务ID
+	TaskName   string            // 任务名称
+	StartTime  time.Time         // 开始时间
+	process    *process.Process  // 进程信息
+	initialMem *runtime.MemStats // 初始内存状态
+	samples    []TaskMetrics     // 采样数据
+	mu         sync.RWMutex      // 读写锁
 }
 
 // NewTaskPerformanceAnalyzer 创建新的性能分析器
+//
+// 参数:
+//   - config: 分析器配置
+//
+// 返回:
+//   - *TaskPerformanceAnalyzer: 新创建的性能分析器实例
+//
+// 该函数会设置默认配置值并初始化所有必要的通道和数据结构
 func NewTaskPerformanceAnalyzer(config AnalyzerConfig) *TaskPerformanceAnalyzer {
-	ctx, cancel := context.WithCancel(context.Background())
+	analysisContext, cancelFunction := context.WithCancel(context.Background())
 
 	// 设置默认值
 	if config.SampleInterval == 0 {
@@ -161,9 +179,9 @@ func NewTaskPerformanceAnalyzer(config AnalyzerConfig) *TaskPerformanceAnalyzer 
 		config.MaxHistory = 1000
 	}
 
-	analyzer := &TaskPerformanceAnalyzer{
-		ctx:                ctx,
-		cancel:             cancel,
+	performanceAnalyzer := &TaskPerformanceAnalyzer{
+		ctx:                analysisContext,
+		cancel:             cancelFunction,
 		config:             config,
 		metrics:            make(map[string]*TaskMetrics),
 		updateChan:         make(chan TaskMetrics, 100),
@@ -174,10 +192,15 @@ func NewTaskPerformanceAnalyzer(config AnalyzerConfig) *TaskPerformanceAnalyzer 
 		internalAlertChan:  make(chan PerformanceAlert, 50),
 	}
 
-	return analyzer
+	return performanceAnalyzer
 }
 
 // Start 启动性能分析器
+//
+// 返回:
+//   - error: 启动错误，nil表示成功
+//
+// 该函数会启动后台goroutine进行指标收集和通道转发
 func (tpa *TaskPerformanceAnalyzer) Start() error {
 	tpa.mu.Lock()
 	defer tpa.mu.Unlock()

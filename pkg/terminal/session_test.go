@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-6-1 21:10:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-1 21:10:03
+* @LastEditTime: 2025-6-3 19:04:27
 * @Description: 会话管理测试
  */
 
@@ -542,21 +542,23 @@ func TestUtilityFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("isNumeric", func(t *testing.T) {
-		testCases := []struct {
+	t.Run("isNumericString", func(t *testing.T) {
+		tests := []struct {
 			input    string
 			expected bool
 		}{
-			{"123", true},
-			{"0", true},
-			{"abc", false},
-			{"12a", false},
-			{"", true}, // 空字符串在实际实现中返回true，因为for range不会执行
+			{"123456", true},
+			{"20240101", true},
+			{"abc123", false},
+			{"123abc", false},
+			{"", true}, // 空字符串被认为是数字
 		}
 
-		for _, tc := range testCases {
-			result := isNumeric(tc.input)
-			assert.Equal(t, tc.expected, result, "输入: %s", tc.input)
+		for _, tc := range tests {
+			result := isNumericString(tc.input)
+			if result != tc.expected {
+				t.Errorf("isNumericString(%q) = %v, expected %v", tc.input, result, tc.expected)
+			}
 		}
 	})
 }
