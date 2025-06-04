@@ -1,3 +1,11 @@
+/*
+* @Author: Lzww0608
+* @Date: 2025-06-04 10:00:00
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-6-4 12:47:40
+* @Description: 配置管理器测试文件
+ */
+
 package config
 
 import (
