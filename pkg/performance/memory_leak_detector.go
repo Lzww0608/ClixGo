@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-06-04 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-4 12:47:32
+* @LastEditTime: 2025-6-5 20:34:10
 * @Description: 内存泄漏检测器核心实现，提供runtime级别的泄漏监控
  */
 
@@ -11,6 +11,8 @@ package performance
 import (
 	"context"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof" // 导入pprof HTTP handlers
 	"runtime"
 	"runtime/pprof"
 	"sort"
@@ -741,10 +743,29 @@ func (mld *MemoryLeakDetector) addSnapshot(snapshot ResourceSnapshot) {
 
 // startPprofServer 启动pprof服务器
 func (mld *MemoryLeakDetector) startPprofServer() {
-	// 这里可以集成net/http/pprof
-	// 由于需要导入net/http相关包，这里先预留接口
-	mld.logger.Info("pprof服务器启动功能待实现",
-		zap.Int("port", mld.config.PprofPort))
+	if !mld.config.EnablePprof {
+		return
+	}
+
+	// 使用net/http/pprof包提供pprof服务
+	addr := fmt.Sprintf(":%d", mld.config.PprofPort)
+
+	mld.logger.Info("启动pprof服务器", zap.String("address", addr))
+
+	// 启动HTTP服务器，使用默认的pprof handlers
+	// net/http/pprof包会自动注册到默认的ServeMux
+
+	// 启动HTTP服务器
+	server := &http.Server{
+		Addr:    addr,
+		Handler: nil, // 使用默认的ServeMux，pprof已自动注册
+	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			mld.safeSendError(fmt.Errorf("pprof服务器启动失败: %w", err))
+		}
+	}()
 }
 
 // 安全发送方法
