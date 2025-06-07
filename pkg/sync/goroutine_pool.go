@@ -246,19 +246,36 @@ func (gp *GoroutinePool) StopWithTimeout(timeout time.Duration) error {
 		// 取消上下文，通知所有工作goroutine停止
 		gp.cancel()
 
-		// 等待所有工作goroutine退出或超时
-		done := make(chan struct{})
-		go func() {
-			gp.waitForWorkersShutdown()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			gp.logger.Info("所有工作goroutine已优雅退出")
-		case <-time.After(timeout):
-			gp.logger.Warn("等待工作goroutine退出超时")
+		// 等待工作goroutine退出，但设置最大等待时间
+		start := time.Now()
+		maxWait := time.Minute // 最多等待1分钟
+		if timeout < maxWait {
+			maxWait = timeout
 		}
+
+		for time.Since(start) < maxWait {
+			gp.workersMu.RLock()
+			count := len(gp.workers)
+			gp.workersMu.RUnlock()
+
+			if count == 0 {
+				gp.logger.Info("所有工作goroutine已优雅退出")
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+
+		// 如果仍有worker存在，强制清理
+		gp.workersMu.Lock()
+		if len(gp.workers) > 0 {
+			gp.logger.Warn("强制清理剩余工作goroutine", zap.Int("count", len(gp.workers)))
+			// 清空映射，重置计数器
+			gp.workers = make(map[string]*worker)
+			atomic.StoreInt32(&gp.activeWorkers, 0)
+			atomic.StoreInt32(&gp.idleWorkers, 0)
+			atomic.StoreInt32(&gp.metrics.TotalWorkers, 0)
+		}
+		gp.workersMu.Unlock()
 
 		// 标记为停止
 		atomic.StoreInt32(&gp.running, 0)
@@ -460,8 +477,8 @@ func (gp *GoroutinePool) removeWorker(workerID string) {
 	gp.workersMu.Lock()
 	defer gp.workersMu.Unlock()
 
-	if w, exists := gp.workers[workerID]; exists {
-		close(w.stopCh)
+	if _, exists := gp.workers[workerID]; exists {
+		// 不要在这里关闭stopCh，worker已经退出了
 		delete(gp.workers, workerID)
 		atomic.AddInt32(&gp.metrics.TotalWorkers, -1)
 		gp.logger.Debug("移除工作goroutine", zap.String("worker_id", workerID))
@@ -508,28 +525,14 @@ func (gp *GoroutinePool) cleanupIdleWorkers() {
 
 	for _, id := range toRemove {
 		if w, exists := gp.workers[id]; exists {
-			close(w.stopCh)
-			delete(gp.workers, id)
-			atomic.AddInt32(&gp.metrics.TotalWorkers, -1)
-			gp.logger.Debug("清理空闲工作goroutine", zap.String("worker_id", id))
+			close(w.stopCh) // 发送停止信号
+			// worker自己会在退出时清理计数器，这里不删除映射
+			gp.logger.Debug("发送停止信号给空闲工作goroutine", zap.String("worker_id", id))
 		}
 	}
 }
 
-// waitForWorkersShutdown 等待所有工作goroutine关闭
-func (gp *GoroutinePool) waitForWorkersShutdown() {
-	for {
-		gp.workersMu.RLock()
-		count := len(gp.workers)
-		gp.workersMu.RUnlock()
-
-		if count == 0 {
-			break
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}
-}
+// waitForWorkersShutdown 等待所有工作goroutine关闭（已废弃，在Stop中内联实现）
 
 // metricsCollector 指标收集器
 func (gp *GoroutinePool) metricsCollector() {
@@ -564,15 +567,15 @@ func (w *worker) run() {
 				w.pool.config.PanicHandler(r)
 			}
 		}
+		// 在panic后清理worker
 		w.pool.removeWorker(w.id)
 	}()
 
+	// worker已经在addWorker中被标记为idle，这里不需要重复操作
 	for {
-		atomic.AddInt32(&w.pool.idleWorkers, 1)
-		atomic.AddInt32(&w.pool.activeWorkers, -1)
-
 		select {
 		case task := <-w.taskCh:
+			// 从idle转换为active
 			atomic.AddInt32(&w.pool.idleWorkers, -1)
 			atomic.AddInt32(&w.pool.activeWorkers, 1)
 			w.lastActive = time.Now()
@@ -580,9 +583,17 @@ func (w *worker) run() {
 
 			w.executeTask(task)
 
+			// 从active转换回idle
+			atomic.AddInt32(&w.pool.activeWorkers, -1)
+			atomic.AddInt32(&w.pool.idleWorkers, 1)
+
 		case <-w.stopCh:
+			// 退出时减去idle状态（worker创建时被标记为idle）
+			atomic.AddInt32(&w.pool.idleWorkers, -1)
 			return
 		case <-w.pool.ctx.Done():
+			// 退出时减去idle状态（worker创建时被标记为idle）
+			atomic.AddInt32(&w.pool.idleWorkers, -1)
 			return
 		}
 	}

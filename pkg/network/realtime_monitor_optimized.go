@@ -151,11 +151,14 @@ func (ornm *OptimizedRealtimeNetworkMonitor) Stop() error {
 
 	ornm.logger.Info("停止优化版网络监控器")
 
-	// 使用优雅关闭管理器统一停止所有组件
-	if err := ornm.shutdownManager.StopWithTimeout(30 * time.Second); err != nil {
-		ornm.logger.Error("优雅关闭失败", zap.Error(err))
-		return err
+	// 使用更短的超时时间，避免嵌套超时
+	if err := ornm.shutdownManager.StopWithTimeout(10 * time.Second); err != nil {
+		ornm.logger.Warn("优雅关闭超时，强制关闭", zap.Error(err))
 	}
+
+	// 强制关闭通道，确保等待的goroutine能够退出
+	close(ornm.updateChan)
+	close(ornm.errorChan)
 
 	ornm.logger.Info("优化版网络监控器已停止")
 	return nil
@@ -527,7 +530,18 @@ func (ornm *OptimizedRealtimeNetworkMonitor) updateHistoryOptimized(snapshot Net
 }
 
 func (ornm *OptimizedRealtimeNetworkMonitor) sendUpdateAsync(snapshot NetworkResourceSnapshot) {
+	// 检查是否仍在运行
+	if atomic.LoadInt32(&ornm.isRunning) == 0 {
+		return
+	}
+
 	ornm.goroutinePool.SubmitFunc("send-update", func(ctx context.Context) error {
+		defer func() {
+			if r := recover(); r != nil {
+				// 忽略向已关闭通道发送数据的panic
+			}
+		}()
+
 		select {
 		case ornm.updateChan <- snapshot:
 		case <-ctx.Done():
@@ -539,7 +553,18 @@ func (ornm *OptimizedRealtimeNetworkMonitor) sendUpdateAsync(snapshot NetworkRes
 }
 
 func (ornm *OptimizedRealtimeNetworkMonitor) sendErrorAsync(err error) {
+	// 检查是否仍在运行
+	if atomic.LoadInt32(&ornm.isRunning) == 0 {
+		return
+	}
+
 	ornm.goroutinePool.SubmitFunc("send-error", func(ctx context.Context) error {
+		defer func() {
+			if r := recover(); r != nil {
+				// 忽略向已关闭通道发送数据的panic
+			}
+		}()
+
 		select {
 		case ornm.errorChan <- err:
 		case <-ctx.Done():

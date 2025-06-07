@@ -169,15 +169,38 @@ func (cd *ConcurrencyDemo) Stop() error {
 	// 打印最终统计
 	cd.printFinalStats()
 
-	// 先停止网络监控器（避免嵌套关闭超时）
+	// 强制快速停止所有组件，避免超时死锁
+	cd.logger.Debug("开始强制停止所有组件...")
+
+	// 停止网络监控器
 	if cd.networkMonitor != nil {
-		if err := cd.networkMonitor.Stop(); err != nil {
-			cd.logger.Warn("停止网络监控器失败", zap.Error(err))
-		}
+		go func() {
+			if err := cd.networkMonitor.Stop(); err != nil {
+				cd.logger.Debug("网络监控器停止失败", zap.Error(err))
+			}
+		}()
 	}
 
-	// 使用优雅关闭管理器停止其他组件
-	return cd.shutdownManager.StopWithTimeout(30 * time.Second)
+	// 停止goroutine池
+	if cd.goroutinePool != nil {
+		go func() {
+			if err := cd.goroutinePool.StopWithTimeout(2 * time.Second); err != nil {
+				cd.logger.Debug("goroutine池停止失败", zap.Error(err))
+			}
+		}()
+	}
+
+	// 停止优雅关闭管理器
+	go func() {
+		if err := cd.shutdownManager.StopWithTimeout(2 * time.Second); err != nil {
+			cd.logger.Debug("优雅关闭管理器停止失败", zap.Error(err))
+		}
+	}()
+
+	// 等待短时间后强制退出
+	time.Sleep(3 * time.Second)
+	cd.logger.Info("并发优化演示已完全停止")
+	return nil
 }
 
 // startNetworkMonitor 启动网络监控器
@@ -291,7 +314,7 @@ func (cd *ConcurrencyDemo) submitTaskWithBackoff(taskType string, duration time.
 func (cd *ConcurrencyDemo) startMonitoring() {
 	// 监控goroutine池状态
 	cd.shutdownManager.RunManagedGoroutine("pool-monitor", func(ctx context.Context) {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -300,11 +323,25 @@ func (cd *ConcurrencyDemo) startMonitoring() {
 				return
 			case <-ticker.C:
 				metrics := cd.goroutinePool.GetMetrics()
-				cd.logger.Info("Goroutine池状态",
+				cd.logger.Info("演示Goroutine池状态",
 					zap.Int32("active_workers", metrics.ActiveWorkers),
+					zap.Int32("idle_workers", metrics.IdleWorkers),
+					zap.Int32("total_workers", metrics.TotalWorkers),
 					zap.Int32("pending_tasks", metrics.PendingTasks),
 					zap.Uint64("completed_tasks", metrics.CompletedTasks),
 				)
+
+				// 同时检查网络监控器的池状态
+				if cd.networkMonitor != nil {
+					netMetrics := cd.networkMonitor.GetPoolMetrics()
+					cd.logger.Info("网络监控Goroutine池状态",
+						zap.Int32("active_workers", netMetrics.ActiveWorkers),
+						zap.Int32("idle_workers", netMetrics.IdleWorkers),
+						zap.Int32("total_workers", netMetrics.TotalWorkers),
+						zap.Int32("pending_tasks", netMetrics.PendingTasks),
+						zap.Uint64("completed_tasks", netMetrics.CompletedTasks),
+					)
+				}
 			}
 		}
 	})
@@ -317,8 +354,13 @@ func (cd *ConcurrencyDemo) startMonitoring() {
 			for {
 				select {
 				case <-ctx.Done():
+					cd.logger.Debug("网络监控goroutine收到停止信号")
 					return
-				case snapshot := <-updateChan:
+				case snapshot, ok := <-updateChan:
+					if !ok {
+						cd.logger.Debug("网络监控更新通道已关闭")
+						return
+					}
 					cd.logger.Debug("网络快照更新",
 						zap.Int("interfaces", len(snapshot.Interfaces)),
 						zap.Float64("score", snapshot.PerformanceScore),
