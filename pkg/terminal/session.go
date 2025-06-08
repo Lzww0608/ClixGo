@@ -2,8 +2,8 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-3 18:52:18
-* @Description: 终端会话管理的核心实现
+* @LastEditTime: 2025-6-8 18:45:00
+* @Description: 终端会话管理的核心实现 - 代码可读性优化版本
  */
 
 package terminal
@@ -39,46 +39,46 @@ func NewSessionManager(config *TerminalConfig) *SessionManager {
 }
 
 // CreateSession 创建新会话
-func (sm *SessionManager) CreateSession(name string) (*Session, error) {
+func (sessionManager *SessionManager) CreateSession(name string) (*Session, error) {
 	// 验证和生成会话名称
-	sessionName := sm.generateSessionName(name)
+	sessionName := sessionManager.generateSessionName(name)
 
 	// 检查会话名是否已存在
-	if sm.sessionExists(sessionName) {
+	if sessionManager.sessionExists(sessionName) {
 		return nil, errors.SessionExists(sessionName)
 	}
 
 	// 创建会话对象
-	session, err := sm.buildSession(sessionName)
+	session, err := sessionManager.buildSession(sessionName)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "创建会话对象失败")
 	}
 
 	// 创建默认窗口
-	window, err := sm.createWindow(session, "")
+	window, err := sessionManager.createWindow(session, "")
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "创建默认窗口失败")
 	}
 
 	session.Windows = append(session.Windows, window)
-	sm.sessions[session.ID] = session
+	sessionManager.sessions[session.ID] = session
 
 	logger.Info("session created",
 		zap.String("session_id", session.ID),
 		zap.String("session_name", sessionName),
-		zap.Int("total_sessions", len(sm.sessions)),
+		zap.Int("total_sessions", len(sessionManager.sessions)),
 	)
 
 	return session, nil
 }
 
 // GetSession 获取会话
-func (sm *SessionManager) GetSession(sessionID string) (*Session, error) {
+func (sessionManager *SessionManager) GetSession(sessionID string) (*Session, error) {
 	if err := utils.Validation.ValidateNotEmpty(sessionID, "sessionID"); err != nil {
 		return nil, err
 	}
 
-	session, exists := sm.sessions[sessionID]
+	session, exists := sessionManager.sessions[sessionID]
 	if !exists {
 		return nil, errors.SessionNotFound(sessionID)
 	}
@@ -86,17 +86,17 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, error) {
 }
 
 // ListSessions 列出所有会话
-func (sm *SessionManager) ListSessions() []*Session {
-	sessions := make([]*Session, 0, len(sm.sessions))
-	for _, session := range sm.sessions {
+func (sessionManager *SessionManager) ListSessions() []*Session {
+	sessions := make([]*Session, 0, len(sessionManager.sessions))
+	for _, session := range sessionManager.sessions {
 		sessions = append(sessions, session)
 	}
 	return sessions
 }
 
 // AttachSession 连接到会话
-func (sm *SessionManager) AttachSession(sessionID string) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) AttachSession(sessionID string) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
@@ -111,8 +111,8 @@ func (sm *SessionManager) AttachSession(sessionID string) error {
 }
 
 // DetachSession 从会话断开
-func (sm *SessionManager) DetachSession(sessionID string) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) DetachSession(sessionID string) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
@@ -126,134 +126,377 @@ func (sm *SessionManager) DetachSession(sessionID string) error {
 	return nil
 }
 
-// KillSession 销毁会话
-func (sm *SessionManager) KillSession(sessionID string) error {
-	session, err := sm.GetSession(sessionID)
+// KillSession 销毁会话并清理所有相关资源
+//
+// 该函数执行完整的会话清理流程，包括：
+// 1. 验证会话存在性
+// 2. 安全地关闭所有关联窗口
+// 3. 更新会话状态并从管理器中移除
+//
+// 参数:
+//   - sessionID: 要销毁的会话ID
+//
+// 返回:
+//   - error: 销毁过程中的错误，nil表示成功
+//
+// 注意：此操作不可逆，会彻底清除会话及其所有数据
+func (sessionManager *SessionManager) KillSession(sessionID string) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
-		return err
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
 	}
 
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
 
-	// 关闭所有窗口（从后往前关闭，避免索引变化问题）
-	for i := len(session.Windows) - 1; i >= 0; i-- {
-		if err := sm.closeWindowUnsafe(session, i); err != nil {
-			// 记录错误但继续
-			fmt.Printf("Warning: failed to close window %d: %v\n", i, err)
-		}
-	}
+	logger.Info("开始销毁会话",
+		zap.String("session_id", sessionID),
+		zap.String("session_name", session.Name),
+		zap.Int("window_count", len(session.Windows)))
 
+	// 安全地关闭所有窗口，收集清理过程中的错误
+	cleanupErrors := sessionManager.cleanupSessionWindows(session)
+
+	// 更新会话状态并从管理器中移除
 	session.Status = SessionDestroyed
-	delete(sm.sessions, sessionID)
+	delete(sessionManager.sessions, sessionID)
+
+	logger.Info("会话销毁完成",
+		zap.String("session_id", sessionID),
+		zap.Int("cleanup_errors", len(cleanupErrors)))
+
+	// 如果清理过程中有错误，返回合并的错误信息
+	if len(cleanupErrors) > 0 {
+		return sessionManager.createCleanupErrorSummary(cleanupErrors)
+	}
 
 	return nil
 }
 
-// CreateWindow 创建新窗口
-func (sm *SessionManager) CreateWindow(sessionID, name string) (*Window, error) {
-	session, err := sm.GetSession(sessionID)
-	if err != nil {
-		return nil, err
+// cleanupSessionWindows 安全地清理会话中的所有窗口
+//
+// 该函数使用逆序遍历来避免索引变化问题，并收集清理过程中的所有错误
+//
+// 参数:
+//   - session: 要清理的会话对象
+//
+// 返回:
+//   - []error: 清理过程中遇到的所有错误
+func (sessionManager *SessionManager) cleanupSessionWindows(session *Session) []error {
+	var cleanupErrors []error
+
+	// 从后往前关闭窗口，避免索引变化问题
+	for windowIndex := len(session.Windows) - 1; windowIndex >= 0; windowIndex-- {
+		if err := sessionManager.closeWindowUnsafe(session, windowIndex); err != nil {
+			cleanupError := fmt.Errorf("关闭窗口 %d 失败: %w", windowIndex, err)
+			cleanupErrors = append(cleanupErrors, cleanupError)
+
+			logger.Warn("窗口关闭失败",
+				zap.String("session_id", session.ID),
+				zap.Int("window_index", windowIndex),
+				zap.Error(err))
+		}
 	}
 
-	window, err := sm.createWindow(session, name)
-	if err != nil {
-		return nil, err
+	return cleanupErrors
+}
+
+// createCleanupErrorSummary 创建清理错误摘要
+//
+// 将多个清理错误合并为一个有意义的错误消息
+//
+// 参数:
+//   - cleanupErrors: 清理过程中的错误列表
+//
+// 返回:
+//   - error: 合并后的错误摘要
+func (sessionManager *SessionManager) createCleanupErrorSummary(cleanupErrors []error) error {
+	errorMessages := make([]string, len(cleanupErrors))
+	for i, err := range cleanupErrors {
+		errorMessages[i] = err.Error()
 	}
 
+	return fmt.Errorf("会话清理过程中发生 %d 个错误: %s",
+		len(cleanupErrors),
+		strings.Join(errorMessages, "; "))
+}
+
+// CreateWindow 在指定会话中创建新窗口
+//
+// 该函数执行完整的窗口创建流程：
+// 1. 验证会话存在性
+// 2. 创建窗口对象和默认面板
+// 3. 更新会话状态
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//   - name: 窗口名称，如果为空则自动生成
+//
+// 返回:
+//   - *Window: 创建的窗口对象
+//   - error: 创建过程中的错误，nil表示成功
+func (sessionManager *SessionManager) CreateWindow(sessionID, name string) (*Window, error) {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	// 创建窗口对象
+	window, err := sessionManager.createWindow(session, name)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "创建窗口对象失败")
+	}
+
+	// 原子性地更新会话状态
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
 
 	session.Windows = append(session.Windows, window)
 	session.ActiveWindow = len(session.Windows) - 1
-	session.LastActive = time.Now()
+	session.LastActive = utils.Times.Now()
+
+	logger.Info("窗口创建成功",
+		zap.String("session_id", sessionID),
+		zap.String("window_id", window.ID),
+		zap.String("window_name", window.Name),
+		zap.Int("total_windows", len(session.Windows)))
 
 	return window, nil
 }
 
-// createWindow 内部创建窗口方法
-func (sm *SessionManager) createWindow(session *Session, name string) (*Window, error) {
-	if name == "" {
-		name = fmt.Sprintf("window-%d", len(session.Windows))
-	}
+// createWindow 内部窗口创建方法
+//
+// 该函数负责窗口对象的实际构建，包括默认面板的创建
+//
+// 参数:
+//   - session: 父会话对象
+//   - name: 窗口名称，如果为空则自动生成
+//
+// 返回:
+//   - *Window: 创建的窗口对象
+//   - error: 创建过程中的错误，nil表示成功
+func (sessionManager *SessionManager) createWindow(session *Session, name string) (*Window, error) {
+	// 生成窗口名称
+	windowName := sessionManager.generateWindowName(session, name)
 
+	// 创建窗口对象
 	window := &Window{
 		ID:         uuid.New().String(),
-		Name:       name,
+		Name:       windowName,
 		Index:      len(session.Windows),
 		Panes:      make([]*Pane, 0),
 		ActivePane: 0,
 		Layout:     LayoutMainVertical,
-		CreatedAt:  time.Now(),
+		CreatedAt:  utils.Times.Now(),
 	}
 
 	// 创建默认面板
-	pane, err := sm.createPane(window, "")
+	defaultPane, err := sessionManager.createPane(window, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create default pane: %v", err)
+		return nil, fmt.Errorf("创建默认面板失败: %w", err)
 	}
 
-	window.Panes = append(window.Panes, pane)
+	window.Panes = append(window.Panes, defaultPane)
+
 	return window, nil
 }
 
-// CloseWindow 关闭窗口
-func (sm *SessionManager) CloseWindow(sessionID string, windowIndex int) error {
-	session, err := sm.GetSession(sessionID)
-	if err != nil {
-		return err
+// generateWindowName 生成窗口名称
+//
+// 如果提供了名称则使用提供的名称，否则自动生成一个唯一名称
+//
+// 参数:
+//   - session: 父会话对象
+//   - name: 用户提供的窗口名称
+//
+// 返回:
+//   - string: 最终的窗口名称
+func (sessionManager *SessionManager) generateWindowName(session *Session, name string) string {
+	if utils.Strings.IsNotEmpty(name) {
+		return name
 	}
-
-	return sm.closeWindow(session, windowIndex)
+	return fmt.Sprintf("window-%d", len(session.Windows))
 }
 
-// closeWindow 内部关闭窗口方法
-func (sm *SessionManager) closeWindow(session *Session, windowIndex int) error {
+// CloseWindow 关闭指定会话中的窗口
+//
+// 该函数提供窗口关闭的公共接口，包含完整的验证和错误处理
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//   - windowIndex: 要关闭的窗口索引
+//
+// 返回:
+//   - error: 关闭过程中的错误，nil表示成功
+func (sessionManager *SessionManager) CloseWindow(sessionID string, windowIndex int) error {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	return sessionManager.closeWindow(session, windowIndex)
+}
+
+// closeWindow 内部窗口关闭方法
+//
+// 该函数负责线程安全的窗口关闭操作
+//
+// 参数:
+//   - session: 父会话对象
+//   - windowIndex: 要关闭的窗口索引
+//
+// 返回:
+//   - error: 关闭过程中的错误，nil表示成功
+func (sessionManager *SessionManager) closeWindow(session *Session, windowIndex int) error {
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
 
-	return sm.closeWindowUnsafe(session, windowIndex)
+	return sessionManager.closeWindowUnsafe(session, windowIndex)
 }
 
-// closeWindowUnsafe 内部关闭窗口方法（不获取锁，调用者需要确保已获取锁）
-func (sm *SessionManager) closeWindowUnsafe(session *Session, windowIndex int) error {
-	if windowIndex < 0 || windowIndex >= len(session.Windows) {
-		return fmt.Errorf("window index out of range: %d", windowIndex)
+// closeWindowUnsafe 无锁窗口关闭方法
+//
+// 该函数执行实际的窗口关闭逻辑，调用者必须确保已获取会话锁
+//
+// 执行的操作包括：
+// 1. 验证窗口索引有效性
+// 2. 关闭窗口中的所有面板
+// 3. 从会话中移除窗口
+// 4. 重新整理窗口索引
+// 5. 调整活动窗口指针
+//
+// 参数:
+//   - session: 父会话对象（调用者必须已获取锁）
+//   - windowIndex: 要关闭的窗口索引
+//
+// 返回:
+//   - error: 关闭过程中的错误，nil表示成功
+func (sessionManager *SessionManager) closeWindowUnsafe(session *Session, windowIndex int) error {
+	// 验证窗口索引
+	if !sessionManager.isValidWindowIndex(session, windowIndex) {
+		return fmt.Errorf("窗口索引超出范围: %d (总数: %d)", windowIndex, len(session.Windows))
 	}
 
 	window := session.Windows[windowIndex]
 
-	// 关闭所有面板
-	for _, pane := range window.Panes {
-		if err := sm.closePane(window, pane.Index); err != nil {
-			fmt.Printf("Warning: failed to close pane %d: %v\n", pane.Index, err)
-		}
-	}
+	logger.Debug("开始关闭窗口",
+		zap.String("session_id", session.ID),
+		zap.String("window_id", window.ID),
+		zap.Int("window_index", windowIndex),
+		zap.Int("pane_count", len(window.Panes)))
+
+	// 关闭窗口中的所有面板
+	sessionManager.cleanupWindowPanes(window)
 
 	// 从会话中移除窗口
-	session.Windows = append(session.Windows[:windowIndex], session.Windows[windowIndex+1:]...)
+	sessionManager.removeWindowFromSession(session, windowIndex)
 
-	// 重新索引窗口
-	for i, w := range session.Windows {
-		w.Index = i
-	}
+	// 重新整理会话状态
+	sessionManager.reorganizeSessionAfterWindowClose(session)
 
-	// 调整活动窗口索引
-	if session.ActiveWindow >= len(session.Windows) {
-		session.ActiveWindow = len(session.Windows) - 1
-	}
-	if session.ActiveWindow < 0 {
-		session.ActiveWindow = 0
-	}
+	session.LastActive = utils.Times.Now()
 
-	session.LastActive = time.Now()
+	logger.Debug("窗口关闭完成",
+		zap.String("session_id", session.ID),
+		zap.Int("remaining_windows", len(session.Windows)))
+
 	return nil
 }
 
+// isValidWindowIndex 验证窗口索引的有效性
+//
+// 参数:
+//   - session: 会话对象
+//   - windowIndex: 要验证的窗口索引
+//
+// 返回:
+//   - bool: true表示索引有效，false表示无效
+func (sessionManager *SessionManager) isValidWindowIndex(session *Session, windowIndex int) bool {
+	return windowIndex >= 0 && windowIndex < len(session.Windows)
+}
+
+// cleanupWindowPanes 清理窗口中的所有面板
+//
+// 该函数安全地关闭窗口中的所有面板，记录但不中断清理过程
+//
+// 参数:
+//   - window: 要清理的窗口对象
+func (sessionManager *SessionManager) cleanupWindowPanes(window *Window) {
+	for _, pane := range window.Panes {
+		if err := sessionManager.closePane(window, pane.Index); err != nil {
+			logger.Warn("面板关闭失败",
+				zap.String("window_id", window.ID),
+				zap.Int("pane_index", pane.Index),
+				zap.Error(err))
+		}
+	}
+}
+
+// removeWindowFromSession 从会话中移除窗口
+//
+// 该函数使用切片操作安全地移除指定索引的窗口
+//
+// 参数:
+//   - session: 父会话对象
+//   - windowIndex: 要移除的窗口索引
+func (sessionManager *SessionManager) removeWindowFromSession(session *Session, windowIndex int) {
+	session.Windows = append(
+		session.Windows[:windowIndex],
+		session.Windows[windowIndex+1:]...,
+	)
+}
+
+// reorganizeSessionAfterWindowClose 窗口关闭后重新整理会话
+//
+// 该函数执行窗口关闭后的必要整理工作：
+// 1. 重新分配窗口索引
+// 2. 调整活动窗口指针
+//
+// 参数:
+//   - session: 要整理的会话对象
+func (sessionManager *SessionManager) reorganizeSessionAfterWindowClose(session *Session) {
+	// 重新分配窗口索引
+	sessionManager.reindexWindows(session)
+
+	// 调整活动窗口指针
+	sessionManager.adjustActiveWindowIndex(session)
+}
+
+// reindexWindows 重新分配窗口索引
+//
+// 确保所有窗口的索引与其在数组中的位置一致
+//
+// 参数:
+//   - session: 要重新索引的会话对象
+func (sessionManager *SessionManager) reindexWindows(session *Session) {
+	for i, window := range session.Windows {
+		window.Index = i
+	}
+}
+
+// adjustActiveWindowIndex 调整活动窗口索引
+//
+// 确保活动窗口索引在窗口关闭后仍然有效
+//
+// 参数:
+//   - session: 要调整的会话对象
+func (sessionManager *SessionManager) adjustActiveWindowIndex(session *Session) {
+	windowCount := len(session.Windows)
+
+	// 如果活动窗口索引超出范围，调整到最后一个窗口
+	if session.ActiveWindow >= windowCount {
+		session.ActiveWindow = windowCount - 1
+	}
+
+	// 如果没有窗口了，重置为0
+	if session.ActiveWindow < 0 {
+		session.ActiveWindow = 0
+	}
+}
+
 // SwitchWindow 切换窗口
-func (sm *SessionManager) SwitchWindow(sessionID string, windowIndex int) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) SwitchWindow(sessionID string, windowIndex int) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
@@ -272,8 +515,8 @@ func (sm *SessionManager) SwitchWindow(sessionID string, windowIndex int) error 
 }
 
 // SplitPane 分割面板
-func (sm *SessionManager) SplitPane(sessionID string, windowIndex int, direction string) (*Pane, error) {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) SplitPane(sessionID string, windowIndex int, direction string) (*Pane, error) {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +528,7 @@ func (sm *SessionManager) SplitPane(sessionID string, windowIndex int, direction
 	window := session.Windows[windowIndex]
 
 	// 创建新面板
-	pane, err := sm.createPane(window, "")
+	pane, err := sessionManager.createPane(window, "")
 	if err != nil {
 		return nil, err
 	}
@@ -297,14 +540,14 @@ func (sm *SessionManager) SplitPane(sessionID string, windowIndex int, direction
 	window.ActivePane = len(window.Panes) - 1
 
 	// 重新计算布局
-	sm.recalculateLayout(window)
+	sessionManager.recalculateLayout(window)
 
 	session.LastActive = time.Now()
 	return pane, nil
 }
 
 // createPane 创建面板
-func (sm *SessionManager) createPane(window *Window, command string) (*Pane, error) {
+func (sessionManager *SessionManager) createPane(window *Window, command string) (*Pane, error) {
 	if command == "" {
 		command = os.Getenv("SHELL")
 		if command == "" {
@@ -330,15 +573,15 @@ func (sm *SessionManager) createPane(window *Window, command string) (*Pane, err
 		LastOutput: time.Now(),
 		Buffer: &Buffer{
 			Lines:    make([][]rune, 0),
-			MaxLines: sm.config.BufferSize,
+			MaxLines: sessionManager.config.BufferSize,
 			CursorX:  0,
 			CursorY:  0,
 		},
 	}
 
 	// 如果配置了简化PTY，创建和启动PTY
-	if sm.config.ClixGoIntegration {
-		ptyManager := NewSimplePTYManager(sm.config)
+	if sessionManager.config.ClixGoIntegration {
+		ptyManager := NewSimplePTYManager(sessionManager.config)
 		pty, err := ptyManager.CreateSimplePTY(pane.ID, command, workingDir, 80, 24)
 		if err != nil {
 			logger.Warn("Failed to create PTY, using simple command execution", zap.Error(err))
@@ -358,8 +601,8 @@ func (sm *SessionManager) createPane(window *Window, command string) (*Pane, err
 }
 
 // ClosePane 关闭面板
-func (sm *SessionManager) ClosePane(sessionID string, windowIndex, paneIndex int) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) ClosePane(sessionID string, windowIndex, paneIndex int) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
@@ -369,11 +612,11 @@ func (sm *SessionManager) ClosePane(sessionID string, windowIndex, paneIndex int
 	}
 
 	window := session.Windows[windowIndex]
-	return sm.closePane(window, paneIndex)
+	return sessionManager.closePane(window, paneIndex)
 }
 
 // closePane 内部关闭面板方法
-func (sm *SessionManager) closePane(window *Window, paneIndex int) error {
+func (sessionManager *SessionManager) closePane(window *Window, paneIndex int) error {
 	window.mutex.Lock()
 	defer window.mutex.Unlock()
 
@@ -407,14 +650,14 @@ func (sm *SessionManager) closePane(window *Window, paneIndex int) error {
 	}
 
 	// 重新计算布局
-	sm.recalculateLayout(window)
+	sessionManager.recalculateLayout(window)
 
 	return nil
 }
 
 // SwitchPane 切换面板
-func (sm *SessionManager) SwitchPane(sessionID string, windowIndex, paneIndex int) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) SwitchPane(sessionID string, windowIndex, paneIndex int) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
@@ -446,7 +689,7 @@ func (sm *SessionManager) SwitchPane(sessionID string, windowIndex, paneIndex in
 }
 
 // recalculateLayout 重新计算布局
-func (sm *SessionManager) recalculateLayout(window *Window) {
+func (sessionManager *SessionManager) recalculateLayout(window *Window) {
 	if len(window.Panes) == 0 {
 		return
 	}
@@ -456,20 +699,20 @@ func (sm *SessionManager) recalculateLayout(window *Window) {
 
 	switch window.Layout {
 	case LayoutEven:
-		sm.layoutEven(window.Panes, termWidth, termHeight)
+		sessionManager.layoutEven(window.Panes, termWidth, termHeight)
 	case LayoutMainVertical:
-		sm.layoutMainVertical(window.Panes, termWidth, termHeight)
+		sessionManager.layoutMainVertical(window.Panes, termWidth, termHeight)
 	case LayoutMainHorizontal:
-		sm.layoutMainHorizontal(window.Panes, termWidth, termHeight)
+		sessionManager.layoutMainHorizontal(window.Panes, termWidth, termHeight)
 	case LayoutTiled:
-		sm.layoutTiled(window.Panes, termWidth, termHeight)
+		sessionManager.layoutTiled(window.Panes, termWidth, termHeight)
 	default:
-		sm.layoutEven(window.Panes, termWidth, termHeight)
+		sessionManager.layoutEven(window.Panes, termWidth, termHeight)
 	}
 }
 
 // layoutEven 均匀布局
-func (sm *SessionManager) layoutEven(panes []*Pane, width, height int) {
+func (sessionManager *SessionManager) layoutEven(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
@@ -484,7 +727,7 @@ func (sm *SessionManager) layoutEven(panes []*Pane, width, height int) {
 }
 
 // layoutMainVertical 主垂直布局
-func (sm *SessionManager) layoutMainVertical(panes []*Pane, width, height int) {
+func (sessionManager *SessionManager) layoutMainVertical(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
@@ -517,7 +760,7 @@ func (sm *SessionManager) layoutMainVertical(panes []*Pane, width, height int) {
 }
 
 // layoutMainHorizontal 主水平布局
-func (sm *SessionManager) layoutMainHorizontal(panes []*Pane, width, height int) {
+func (sessionManager *SessionManager) layoutMainHorizontal(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
@@ -550,7 +793,7 @@ func (sm *SessionManager) layoutMainHorizontal(panes []*Pane, width, height int)
 }
 
 // layoutTiled 平铺布局
-func (sm *SessionManager) layoutTiled(panes []*Pane, width, height int) {
+func (sessionManager *SessionManager) layoutTiled(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
@@ -579,14 +822,14 @@ func (sm *SessionManager) layoutTiled(panes []*Pane, width, height int) {
 }
 
 // RenameSession 重命名会话
-func (sm *SessionManager) RenameSession(sessionID, newName string) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) RenameSession(sessionID, newName string) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
 
 	// 检查新名称是否已存在
-	for _, s := range sm.sessions {
+	for _, s := range sessionManager.sessions {
 		if s.Name == newName && s.ID != sessionID {
 			return fmt.Errorf("会话已存在: '%s'", newName)
 		}
@@ -602,8 +845,8 @@ func (sm *SessionManager) RenameSession(sessionID, newName string) error {
 }
 
 // RenameWindow 重命名窗口
-func (sm *SessionManager) RenameWindow(sessionID string, windowIndex int, newName string) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) RenameWindow(sessionID string, windowIndex int, newName string) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
@@ -624,8 +867,8 @@ func (sm *SessionManager) RenameWindow(sessionID string, windowIndex int, newNam
 }
 
 // GetSessionByName 根据名称获取会话
-func (sm *SessionManager) GetSessionByName(name string) (*Session, error) {
-	for _, session := range sm.sessions {
+func (sessionManager *SessionManager) GetSessionByName(name string) (*Session, error) {
+	for _, session := range sessionManager.sessions {
 		if session.Name == name {
 			return session, nil
 		}
@@ -634,8 +877,8 @@ func (sm *SessionManager) GetSessionByName(name string) (*Session, error) {
 }
 
 // SaveSession 保存会话状态
-func (sm *SessionManager) SaveSession(sessionID string, filepath string) error {
-	session, err := sm.GetSession(sessionID)
+func (sessionManager *SessionManager) SaveSession(sessionID string, filepath string) error {
+	session, err := sessionManager.GetSession(sessionID)
 	if err != nil {
 		return err
 	}
@@ -659,7 +902,7 @@ func (sm *SessionManager) SaveSession(sessionID string, filepath string) error {
 }
 
 // LoadSession 加载会话状态
-func (sm *SessionManager) LoadSession(filepath string) (*Session, error) {
+func (sessionManager *SessionManager) LoadSession(filepath string) (*Session, error) {
 	// 从文件路径提取会话名称
 	sessionName := extractSessionNameFromPath(filepath)
 	if sessionName == "" {
@@ -679,13 +922,13 @@ func (sm *SessionManager) LoadSession(filepath string) (*Session, error) {
 	}
 
 	// 恢复会话
-	session, err := pm.RestoreSession(snapshot, sm)
+	session, err := pm.RestoreSession(snapshot, sessionManager)
 	if err != nil {
 		return nil, fmt.Errorf("恢复会话失败: %w", err)
 	}
 
 	// 将会话添加到管理器
-	sm.sessions[session.ID] = session
+	sessionManager.sessions[session.ID] = session
 
 	logger.Info("会话加载成功",
 		zap.String("session_id", session.ID),
@@ -695,17 +938,17 @@ func (sm *SessionManager) LoadSession(filepath string) (*Session, error) {
 }
 
 // SaveSessionByName 根据名称保存会话
-func (sm *SessionManager) SaveSessionByName(sessionName string) error {
-	session, err := sm.GetSessionByName(sessionName)
+func (sessionManager *SessionManager) SaveSessionByName(sessionName string) error {
+	session, err := sessionManager.GetSessionByName(sessionName)
 	if err != nil {
 		return err
 	}
 
-	return sm.SaveSession(session.ID, "")
+	return sessionManager.SaveSession(session.ID, "")
 }
 
 // LoadSessionByName 根据名称加载会话
-func (sm *SessionManager) LoadSessionByName(sessionName string) (*Session, error) {
+func (sessionManager *SessionManager) LoadSessionByName(sessionName string) (*Session, error) {
 	// 创建持久化管理器
 	pm, err := NewPersistenceManager(nil)
 	if err != nil {
@@ -719,13 +962,13 @@ func (sm *SessionManager) LoadSessionByName(sessionName string) (*Session, error
 	}
 
 	// 恢复会话
-	session, err := pm.RestoreSession(snapshot, sm)
+	session, err := pm.RestoreSession(snapshot, sessionManager)
 	if err != nil {
 		return nil, fmt.Errorf("恢复会话失败: %w", err)
 	}
 
 	// 将会话添加到管理器
-	sm.sessions[session.ID] = session
+	sessionManager.sessions[session.ID] = session
 
 	logger.Info("会话加载成功",
 		zap.String("session_id", session.ID),
@@ -735,7 +978,7 @@ func (sm *SessionManager) LoadSessionByName(sessionName string) (*Session, error
 }
 
 // ListSavedSessions 列出已保存的会话
-func (sm *SessionManager) ListSavedSessions() ([]string, error) {
+func (sessionManager *SessionManager) ListSavedSessions() ([]string, error) {
 	pm, err := NewPersistenceManager(nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建持久化管理器失败: %w", err)
@@ -759,7 +1002,7 @@ func (sm *SessionManager) ListSavedSessions() ([]string, error) {
 }
 
 // DeleteSavedSession 删除已保存的会话
-func (sm *SessionManager) DeleteSavedSession(sessionName string) error {
+func (sessionManager *SessionManager) DeleteSavedSession(sessionName string) error {
 	pm, err := NewPersistenceManager(nil)
 	if err != nil {
 		return fmt.Errorf("创建持久化管理器失败: %w", err)
@@ -804,14 +1047,14 @@ func (sm *SessionManager) DeleteSavedSession(sessionName string) error {
 //
 // 该函数会在后台启动一个goroutine，定期保存指定会话的状态
 // 注意：调用者需要负责停止自动保存服务以避免goroutine泄漏
-func (sm *SessionManager) AutoSaveSession(sessionID string, interval time.Duration) {
+func (sessionManager *SessionManager) AutoSaveSession(sessionID string, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			if err := sm.SaveSession(sessionID, ""); err != nil {
+			if err := sessionManager.SaveSession(sessionID, ""); err != nil {
 				logger.Error("自动保存会话失败",
 					zap.String("session_id", sessionID),
 					zap.Error(err))
@@ -922,32 +1165,61 @@ func isNumericString(s string) bool {
 
 // generateSessionName 生成唯一的会话名称
 //
+// 该函数根据用户提供的名称生成最终的会话名称。如果用户未提供名称，
+// 则自动生成一个基于时间戳的唯一名称，确保不与现有会话冲突。
+//
 // 参数:
 //   - name: 用户指定的会话名称，可以为空
 //
 // 返回:
 //   - string: 生成的会话名称
 //
-// 如果用户提供了名称则使用用户名称，否则自动生成一个唯一名称
-func (sm *SessionManager) generateSessionName(name string) string {
-	if utils.Strings.IsNotEmpty(name) {
+// 命名规则：
+//   - 如果用户提供了名称且不冲突，直接使用
+//   - 如果用户提供的名称已存在，添加数字后缀
+//   - 如果用户未提供名称，自动生成格式为"session_YYYYMMDD_HHMMSS"的名称
+//
+// 示例:
+//   - generateSessionName("") -> "session_20231208_143022"
+//   - generateSessionName("work") -> "work" (如果不存在)
+//   - generateSessionName("work") -> "work_1" (如果work已存在)
+func (sessionManager *SessionManager) generateSessionName(name string) string {
+	if name == "" {
+		// 生成基于时间戳的默认名称
+		timestamp := time.Now().Format("20060102_150405")
+		return fmt.Sprintf("session_%s", timestamp)
+	}
+
+	// 检查名称是否已存在
+	if !sessionManager.sessionExists(name) {
 		return name
 	}
-	return fmt.Sprintf("session-%d", len(sm.sessions)+1)
+
+	// 如果名称已存在，添加数字后缀
+	counter := 1
+	for {
+		candidateName := fmt.Sprintf("%s_%d", name, counter)
+		if !sessionManager.sessionExists(candidateName) {
+			return candidateName
+		}
+		counter++
+	}
 }
 
 // sessionExists 检查指定名称的会话是否已存在
+//
+// 该函数遍历所有现有会话，检查是否存在与指定名称匹配的会话
 //
 // 参数:
 //   - name: 要检查的会话名称
 //
 // 返回:
-//   - bool: true表示会话已存在，false表示不存在
+//   - bool: true表示会话名称已存在，false表示不存在
 //
-// 该函数通过遍历所有现有会话来进行名称冲突检查
-func (sm *SessionManager) sessionExists(name string) bool {
-	for _, existingSession := range sm.sessions {
-		if existingSession.Name == name {
+// 注意：此函数执行的是精确匹配，区分大小写
+func (sessionManager *SessionManager) sessionExists(name string) bool {
+	for _, session := range sessionManager.sessions {
+		if session.Name == name {
 			return true
 		}
 	}
@@ -956,23 +1228,39 @@ func (sm *SessionManager) sessionExists(name string) bool {
 
 // buildSession 构建新的会话对象
 //
+// 该函数创建一个完整配置的会话实例，包括基本属性、UUID、状态等
+//
 // 参数:
 //   - name: 会话名称
 //
 // 返回:
-//   - *Session: 创建的会话对象
-//   - error: 构建过程中的错误
+//   - *Session: 新创建的会话对象
+//   - error: 创建过程中的错误，nil表示成功
 //
-// 该函数创建一个完整初始化的会话对象，设置所有必要的默认值
-func (sm *SessionManager) buildSession(name string) (*Session, error) {
+// 会话初始化包括：
+//   - 分配唯一的UUID作为会话ID
+//   - 设置会话名称和创建时间
+//   - 初始化会话状态为活动状态
+//   - 准备空的窗口列表
+//   - 配置并发安全的互斥锁
+func (sessionManager *SessionManager) buildSession(name string) (*Session, error) {
+	sessionUUID := uuid.New().String()
+	currentTime := time.Now()
+
 	newSession := &Session{
-		ID:           uuid.New().String(),
+		ID:           sessionUUID,
 		Name:         name,
 		Status:       SessionActive,
-		CreatedAt:    utils.Times.Now(),
-		LastActive:   utils.Times.Now(),
+		CreatedAt:    currentTime,
+		LastActive:   currentTime,
 		Windows:      make([]*Window, 0),
 		ActiveWindow: 0,
 	}
+
+	logger.Info("构建新会话",
+		zap.String("session_id", sessionUUID),
+		zap.String("session_name", name),
+		zap.Time("created_at", newSession.CreatedAt))
+
 	return newSession, nil
 }

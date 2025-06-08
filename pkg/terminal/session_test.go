@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-6-1 21:10:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-3 19:04:27
+* @LastEditTime: 2025-6-8 20:13:01
 * @Description: 会话管理测试
  */
 
@@ -38,13 +38,15 @@ func TestSessionManager_CreateSession(t *testing.T) {
 		session, err := sm.CreateSession("")
 		assert.NoError(t, err)
 		assert.NotNil(t, session)
-		assert.Contains(t, session.Name, "session-", "应该有默认名称")
+		assert.Contains(t, session.Name, "session_", "应该有默认名称")
 	})
 
 	t.Run("创建重复名称的会话", func(t *testing.T) {
-		_, err := sm.CreateSession("test-session")
-		assert.Error(t, err, "应该拒绝重复的会话名称")
-		assert.Contains(t, err.Error(), "会话已存在")
+		// 现在的逻辑是自动添加后缀，不会报错
+		session2, err := sm.CreateSession("test-session")
+		assert.NoError(t, err, "应该自动添加后缀避免冲突")
+		assert.NotNil(t, session2)
+		assert.Equal(t, "test-session_1", session2.Name, "应该自动添加数字后缀")
 	})
 }
 
