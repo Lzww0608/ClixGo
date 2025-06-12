@@ -2,8 +2,8 @@
 * @Author: Lzww0608
 * @Date: 2025-01-15 11:30:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-01-15 11:30:00
-* @Description: 统一终端CLI - 整合现有terminal.go和新的tmux兼容功能
+* @LastEditTime: 2025-6-12 10:45:00
+* @Description: 统一终端CLI - 质量优化版本，改进错误处理和用户体验
  */
 
 package cli
@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Lzww0608/ClixGo/pkg/commands"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/Lzww0608/ClixGo/pkg/terminal"
 	"github.com/spf13/cobra"
@@ -22,9 +21,6 @@ import (
 // TerminalCLI 统一终端CLI管理器
 type TerminalCLI struct {
 	sessionManager *terminal.SessionManager
-	parser         *commands.EnhancedParser
-	integrator     *commands.SessionIntegrator
-	server         *terminal.TerminalServer
 	config         *terminal.TerminalConfig
 }
 
@@ -33,26 +29,8 @@ func NewTerminalCLI() *TerminalCLI {
 	config := terminal.DefaultConfig
 	sessionManager := terminal.NewSessionManager(config)
 
-	// 创建logger
-	cliLogger := &CLILogger{}
-
-	// 创建增强解析器
-	parser := commands.NewEnhancedParser(cliLogger)
-
-	// 创建会话集成器
-	integrator := commands.NewSessionIntegrator(sessionManager, cliLogger)
-
-	// 注册tmux兼容命令
-	parser.RegisterCommand(commands.NewTmuxNewSessionCommand(integrator, cliLogger))
-	parser.RegisterCommand(commands.NewTmuxAttachSessionCommand(integrator, cliLogger))
-	parser.RegisterCommand(commands.NewTmuxListSessionsCommand(integrator, cliLogger))
-	parser.RegisterCommand(commands.NewTmuxKillSessionCommand(integrator, cliLogger))
-	parser.RegisterCommand(commands.NewTmuxNewWindowCommand(integrator, cliLogger))
-
 	return &TerminalCLI{
 		sessionManager: sessionManager,
-		parser:         parser,
-		integrator:     integrator,
 		config:         config,
 	}
 }
@@ -200,495 +178,389 @@ func NewUnifiedTerminalCmd() *cobra.Command {
 	})
 	cli.addSplitWindowFlags(cmd.Commands()[5])
 
-	// =========================== 高级功能 ===========================
-
-	// exec - 直接执行tmux命令
-	cmd.AddCommand(&cobra.Command{
-		Use:   "exec [tmux-command...]",
-		Short: "直接执行tmux命令 (完全兼容模式)",
-		Long: `直接执行任意tmux命令，提供100%%兼容性
-
-用法示例:
-  clixgo terminal exec "new-session -s dev -d"    # 创建分离会话
-  clixgo terminal exec "split-window -h"          # 水平分割
-  clixgo terminal exec "list-windows -t dev"      # 列出窗口
-  clixgo terminal exec "send-keys 'ls' Enter"     # 发送按键`,
-		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.executeDirectCommand(cmd, args)
-		},
-	})
-
-	// key - 模拟快捷键
-	cmd.AddCommand(&cobra.Command{
-		Use:   "key [key-combination]",
-		Short: "模拟tmux快捷键操作",
-		Long: `模拟tmux快捷键操作，用于脚本和调试
-
-支持的快捷键:
-  c      - 创建新窗口
-  d      - 断开会话
-  s      - 选择会话
-  "      - 水平分割
-  %      - 垂直分割
-  n/p    - 下一个/上一个窗口
-  o      - 切换面板
-
-用法示例:
-  clixgo terminal key c                        # 模拟Ctrl-b c
-  clixgo terminal key "\"\"                      # 模拟Ctrl-b "
-  clixgo terminal key Space                   # 模拟Ctrl-b Space`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.executeKeyBinding(cmd, args)
-		},
-	})
-
-	// =========================== 服务器管理 ===========================
-
-	serverCmd := &cobra.Command{
-		Use:   "server",
-		Short: "管理终端服务器",
-		Long: `管理ClixGo终端服务器进程
-
-功能:
-  start  - 启动服务器
-  stop   - 停止服务器  
-  status - 查看状态
-  restart- 重启服务器`,
-	}
-
-	serverCmd.AddCommand(&cobra.Command{
-		Use:   "start",
-		Short: "启动终端服务器",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.startServer()
-		},
-	})
-
-	serverCmd.AddCommand(&cobra.Command{
-		Use:   "stop",
-		Short: "停止终端服务器",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.stopServer()
-		},
-	})
-
-	serverCmd.AddCommand(&cobra.Command{
-		Use:   "status",
-		Short: "查看服务器状态",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.serverStatus()
-		},
-	})
-
-	cmd.AddCommand(serverCmd)
-
-	// =========================== 信息和帮助 ===========================
-
-	// info - 显示信息
-	cmd.AddCommand(&cobra.Command{
-		Use:   "info",
-		Short: "显示ClixGo终端信息和兼容性",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.showInfo()
-		},
-	})
-
-	// migrate - 迁移工具
-	cmd.AddCommand(&cobra.Command{
-		Use:   "migrate",
-		Short: "从tmux迁移工具",
-		Long: `从tmux迁移配置和会话
-
-功能:
-  - 导入tmux配置文件
-  - 迁移现有tmux会话
-  - 转换快捷键绑定`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cli.migrateFromTmux()
-		},
-	})
-
 	return cmd
 }
 
-// =========================== 命令执行方法 ===========================
+// =========================== 核心会话管理命令执行 ===========================
 
-// executeNewSession 执行new-session命令
+// executeNewSession 执行新建会话命令
 func (cli *TerminalCLI) executeNewSession(cmd *cobra.Command, args []string) error {
-	tmuxCmd := "new-session"
-
-	// 构建tmux命令参数
-	if detached, _ := cmd.Flags().GetBool("detached"); detached {
-		tmuxCmd += " -d"
-	}
-
 	sessionName := ""
-	if name, _ := cmd.Flags().GetString("session-name"); name != "" {
-		sessionName = name
-	} else if len(args) > 0 {
+	if len(args) > 0 {
 		sessionName = args[0]
 	}
 
+	// 获取标志值
+	sessionNameFlag, _ := cmd.Flags().GetString("session-name")
+	if sessionNameFlag != "" {
+		sessionName = sessionNameFlag
+	}
+
+	detached, _ := cmd.Flags().GetBool("detached")
+	_, _ = cmd.Flags().GetString("window-name") // 暂时未使用
+
+	// 验证参数
+	if sessionName != "" && !isValidSessionName(sessionName) {
+		return fmt.Errorf("❌ 无效的会话名称 '%s'\n💡 提示: 会话名只能包含字母、数字、连字符(-)和下划线(_)", sessionName)
+	}
+
+	// 检查会话是否已存在
 	if sessionName != "" {
-		tmuxCmd += fmt.Sprintf(" -s \"%s\"", sessionName)
+		if existingSession, err := cli.sessionManager.GetSessionByName(sessionName); err == nil && existingSession != nil {
+			return fmt.Errorf("❌ 会话 '%s' 已存在\n💡 建议: 使用 'clixgo terminal attach %s' 连接到现有会话\n💡 或者: 使用 'clixgo terminal kill %s' 删除现有会话后重新创建", sessionName, sessionName, sessionName)
+		}
 	}
 
-	if windowName, _ := cmd.Flags().GetString("window-name"); windowName != "" {
-		tmuxCmd += fmt.Sprintf(" -n \"%s\"", windowName)
+	// 创建会话
+	session, err := cli.sessionManager.CreateSession(sessionName)
+	if err != nil {
+		return fmt.Errorf("❌ 创建会话失败: %v\n💡 可能原因:\n  • 会话名冲突\n  • 系统资源不足\n  • 权限问题\n🔧 解决方案:\n  • 检查会话列表: clixgo terminal ls\n  • 检查系统资源: clixgo perfmonitor", err)
 	}
 
-	if startDir, _ := cmd.Flags().GetString("start-directory"); startDir != "" {
-		tmuxCmd += fmt.Sprintf(" -c \"%s\"", startDir)
+	if !detached {
+		fmt.Printf("✅ 成功创建会话 '%s'\n", session.Name)
+	} else {
+		fmt.Printf("✅ 成功创建分离会话 '%s'\n💡 连接方法: clixgo terminal attach %s\n", session.Name, session.Name)
 	}
 
-	return cli.executeTmuxCommand(tmuxCmd)
+	return nil
 }
 
-// executeAttachSession 执行attach-session命令
+// executeAttachSession 执行连接会话命令
 func (cli *TerminalCLI) executeAttachSession(cmd *cobra.Command, args []string) error {
-	tmuxCmd := "attach-session"
-
-	if detachOthers, _ := cmd.Flags().GetBool("detach-others"); detachOthers {
-		tmuxCmd += " -d"
+	sessionName := ""
+	if len(args) > 0 {
+		sessionName = args[0]
 	}
 
-	if readOnly, _ := cmd.Flags().GetBool("read-only"); readOnly {
-		tmuxCmd += " -r"
+	targetFlag, _ := cmd.Flags().GetString("target")
+	if targetFlag != "" {
+		sessionName = targetFlag
 	}
 
-	targetSession := ""
-	if target, _ := cmd.Flags().GetString("target"); target != "" {
-		targetSession = target
-	} else if len(args) > 0 {
-		targetSession = args[0]
+	// 如果没有指定会话名，尝试连接到最近的会话
+	if sessionName == "" {
+		sessions := cli.sessionManager.ListSessions()
+		if len(sessions) == 0 {
+			return fmt.Errorf("❌ 没有可用的会话\n💡 创建新会话: clixgo terminal new-session\n💡 或者简化命令: clixgo terminal new")
+		}
+		// 使用第一个会话（通常是最近创建的）
+		sessionName = sessions[0].Name
+		fmt.Printf("🔗 自动连接到会话 '%s'\n", sessionName)
 	}
 
-	if targetSession != "" {
-		tmuxCmd += fmt.Sprintf(" -t \"%s\"", targetSession)
+	// 检查会话是否存在
+	session, err := cli.sessionManager.GetSessionByName(sessionName)
+	if err != nil || session == nil {
+		// 提供智能建议
+		sessions := cli.sessionManager.ListSessions()
+		if len(sessions) == 0 {
+			return fmt.Errorf("❌ 会话 '%s' 不存在，且没有其他可用会话\n💡 创建新会话: clixgo terminal new-session %s", sessionName, sessionName)
+		}
+
+		// 寻找相似名称的会话
+		var suggestions []string
+		for _, s := range sessions {
+			if strings.Contains(s.Name, sessionName) || strings.Contains(sessionName, s.Name) {
+				suggestions = append(suggestions, s.Name)
+			}
+		}
+
+		errMsg := fmt.Sprintf("❌ 会话 '%s' 不存在\n", sessionName)
+		if len(suggestions) > 0 {
+			errMsg += "💡 您是否想要连接到:\n"
+			for _, suggestion := range suggestions {
+				errMsg += fmt.Sprintf("  • clixgo terminal attach %s\n", suggestion)
+			}
+		} else {
+			errMsg += "💡 当前可用会话:\n"
+			for _, s := range sessions {
+				errMsg += fmt.Sprintf("  • %s\n", s.Name)
+			}
+		}
+		errMsg += "💡 创建新会话: clixgo terminal new-session " + sessionName
+
+		return fmt.Errorf(errMsg)
 	}
 
-	return cli.executeTmuxCommand(tmuxCmd)
+	// 执行连接
+	if err := cli.sessionManager.AttachSession(session.ID); err != nil {
+		return fmt.Errorf("❌ 连接会话失败: %v\n💡 可能原因:\n  • 会话正在被其他客户端使用\n  • 会话状态异常\n🔧 解决方案:\n  • 强制连接: clixgo terminal attach %s -d\n  • 检查会话状态: clixgo terminal ls", err, sessionName)
+	}
+
+	fmt.Printf("✅ 成功连接到会话 '%s'\n", sessionName)
+	return nil
 }
 
-// executeListSessions 执行list-sessions命令
+// executeListSessions 执行列出会话命令
 func (cli *TerminalCLI) executeListSessions(cmd *cobra.Command, args []string) error {
-	tmuxCmd := "list-sessions"
+	sessions := cli.sessionManager.ListSessions()
 
-	if format, _ := cmd.Flags().GetString("format"); format != "" {
-		tmuxCmd += fmt.Sprintf(" -F \"%s\"", format)
+	if len(sessions) == 0 {
+		fmt.Println("📋 当前没有活动会话")
+		fmt.Println("💡 创建新会话: clixgo terminal new-session")
+		return nil
 	}
 
-	return cli.executeTmuxCommand(tmuxCmd)
+	format, _ := cmd.Flags().GetString("format")
+
+	fmt.Printf("📋 活动会话列表 (%d个):\n", len(sessions))
+	fmt.Println("─────────────────────────────────────")
+
+	for i, session := range sessions {
+		if format != "" {
+			// TODO: 实现自定义格式化
+			fmt.Printf("%s\n", session.Name)
+		} else {
+			status := "🟢 活动"
+			if session.Status != terminal.SessionActive {
+				status = "🔵 分离"
+			}
+
+			fmt.Printf("%d. %s %s\n", i+1, session.Name, status)
+			fmt.Printf("   🆔 ID: %s\n", session.ID)
+			fmt.Printf("   🪟 窗口: %d个\n", len(session.Windows))
+			if i < len(sessions)-1 {
+				fmt.Println()
+			}
+		}
+	}
+
+	fmt.Println("─────────────────────────────────────")
+	fmt.Println("💡 连接会话: clixgo terminal attach <会话名>")
+	fmt.Println("💡 删除会话: clixgo terminal kill <会话名>")
+
+	return nil
 }
 
-// executeKillSession 执行kill-session命令
+// executeKillSession 执行删除会话命令
 func (cli *TerminalCLI) executeKillSession(cmd *cobra.Command, args []string) error {
-	tmuxCmd := "kill-session"
-
-	if all, _ := cmd.Flags().GetBool("all"); all {
-		tmuxCmd += " -a"
+	sessionName := ""
+	if len(args) > 0 {
+		sessionName = args[0]
 	}
 
-	targetSession := ""
-	if target, _ := cmd.Flags().GetString("target"); target != "" {
-		targetSession = target
-	} else if len(args) > 0 {
-		targetSession = args[0]
+	targetFlag, _ := cmd.Flags().GetString("target")
+	if targetFlag != "" {
+		sessionName = targetFlag
 	}
 
-	if targetSession != "" {
-		tmuxCmd += fmt.Sprintf(" -t \"%s\"", targetSession)
+	killAll, _ := cmd.Flags().GetBool("all")
+
+	if killAll {
+		sessions := cli.sessionManager.ListSessions()
+		if len(sessions) == 0 {
+			fmt.Println("📋 没有会话需要删除")
+			return nil
+		}
+
+		fmt.Printf("⚠️  确定要删除所有 %d 个会话吗？这个操作不可撤销！\n", len(sessions))
+		fmt.Print("输入 'yes' 确认，其他任意键取消: ")
+
+		var confirmation string
+		fmt.Scanln(&confirmation)
+
+		if strings.ToLower(confirmation) != "yes" {
+			fmt.Println("❌ 操作已取消")
+			return nil
+		}
+
+		// 删除所有会话
+		for _, session := range sessions {
+			if err := cli.sessionManager.KillSession(session.ID); err != nil {
+				logger.Error("删除会话失败", zap.String("session", session.Name), zap.Error(err))
+				fmt.Printf("❌ 删除会话 '%s' 失败: %v\n", session.Name, err)
+			} else {
+				fmt.Printf("✅ 已删除会话 '%s'\n", session.Name)
+			}
+		}
+		return nil
 	}
 
-	return cli.executeTmuxCommand(tmuxCmd)
+	if sessionName == "" {
+		return fmt.Errorf("❌ 请指定要删除的会话名称\n💡 查看会话列表: clixgo terminal ls\n💡 删除所有会话: clixgo terminal kill -a")
+	}
+
+	// 检查会话是否存在
+	session, err := cli.sessionManager.GetSessionByName(sessionName)
+	if err != nil || session == nil {
+		// 提供智能建议
+		sessions := cli.sessionManager.ListSessions()
+		if len(sessions) == 0 {
+			return fmt.Errorf("❌ 会话 '%s' 不存在，且没有其他会话", sessionName)
+		}
+
+		var suggestions []string
+		for _, s := range sessions {
+			if strings.Contains(s.Name, sessionName) || strings.Contains(sessionName, s.Name) {
+				suggestions = append(suggestions, s.Name)
+			}
+		}
+
+		errMsg := fmt.Sprintf("❌ 会话 '%s' 不存在\n", sessionName)
+		if len(suggestions) > 0 {
+			errMsg += "💡 您是否想要删除:\n"
+			for _, suggestion := range suggestions {
+				errMsg += fmt.Sprintf("  • clixgo terminal kill %s\n", suggestion)
+			}
+		} else {
+			errMsg += "💡 当前可用会话:\n"
+			for _, s := range sessions {
+				errMsg += fmt.Sprintf("  • %s\n", s.Name)
+			}
+		}
+
+		return fmt.Errorf(errMsg)
+	}
+
+	// 执行删除
+	if err := cli.sessionManager.KillSession(session.ID); err != nil {
+		return fmt.Errorf("❌ 删除会话失败: %v\n💡 可能原因:\n  • 会话正在使用中\n  • 权限问题\n🔧 解决方案:\n  • 先断开连接再删除\n  • 检查会话状态: clixgo terminal ls", err)
+	}
+
+	fmt.Printf("✅ 成功删除会话 '%s'\n", sessionName)
+	return nil
 }
 
-// executeNewWindow 执行new-window命令
+// executeNewWindow 执行新建窗口命令
 func (cli *TerminalCLI) executeNewWindow(cmd *cobra.Command, args []string) error {
-	tmuxCmd := "new-window"
-
 	windowName := ""
-	if name, _ := cmd.Flags().GetString("name"); name != "" {
-		windowName = name
-	} else if len(args) > 0 {
+	if len(args) > 0 {
 		windowName = args[0]
 	}
 
-	if windowName != "" {
-		tmuxCmd += fmt.Sprintf(" -n \"%s\"", windowName)
+	nameFlag, _ := cmd.Flags().GetString("window-name")
+	if nameFlag != "" {
+		windowName = nameFlag
 	}
 
-	if target, _ := cmd.Flags().GetString("target"); target != "" {
-		tmuxCmd += fmt.Sprintf(" -t \"%s\"", target)
-	}
+	targetSession, _ := cmd.Flags().GetString("target")
 
-	if startDir, _ := cmd.Flags().GetString("start-directory"); startDir != "" {
-		tmuxCmd += fmt.Sprintf(" -c \"%s\"", startDir)
-	}
-
-	return cli.executeTmuxCommand(tmuxCmd)
-}
-
-// executeSplitWindow 执行split-window命令
-func (cli *TerminalCLI) executeSplitWindow(cmd *cobra.Command, args []string) error {
-	tmuxCmd := "split-window"
-
-	if horizontal, _ := cmd.Flags().GetBool("horizontal"); horizontal {
-		tmuxCmd += " -h"
-	}
-
-	if vertical, _ := cmd.Flags().GetBool("vertical"); vertical {
-		tmuxCmd += " -v"
-	}
-
-	if target, _ := cmd.Flags().GetString("target"); target != "" {
-		tmuxCmd += fmt.Sprintf(" -t \"%s\"", target)
-	}
-
-	if startDir, _ := cmd.Flags().GetString("start-directory"); startDir != "" {
-		tmuxCmd += fmt.Sprintf(" -c \"%s\"", startDir)
-	}
-
-	return cli.executeTmuxCommand(tmuxCmd)
-}
-
-// executeDirectCommand 执行直接tmux命令
-func (cli *TerminalCLI) executeDirectCommand(cmd *cobra.Command, args []string) error {
-	tmuxCmd := strings.Join(args, " ")
-	logger.Info("执行直接tmux命令", zap.String("command", tmuxCmd))
-	return cli.executeTmuxCommand(tmuxCmd)
-}
-
-// executeKeyBinding 执行快捷键绑定
-func (cli *TerminalCLI) executeKeyBinding(cmd *cobra.Command, args []string) error {
-	key := args[0]
-
-	cmdList, err := cli.parser.HandleKeyBinding(key)
-	if err != nil {
-		return fmt.Errorf("快捷键处理失败: %v", err)
-	}
-
-	ctx := &commands.Context{
-		Variables: make(map[string]interface{}),
-		Logger:    &CLILogger{},
-	}
-
-	if err := cmdList.Execute(ctx); err != nil {
-		return fmt.Errorf("执行快捷键命令失败: %v", err)
-	}
-
-	fmt.Printf("✅ 快捷键 '%s' 执行成功\n", key)
-	return nil
-}
-
-// executeTmuxCommand 执行tmux命令的通用方法
-func (cli *TerminalCLI) executeTmuxCommand(tmuxCmd string) error {
-	logger.Info("执行tmux命令", zap.String("command", tmuxCmd))
-
-	cmdList, err := cli.parser.ParseTmuxCommand(tmuxCmd)
-	if err != nil {
-		return fmt.Errorf("解析tmux命令失败: %v", err)
-	}
-
-	ctx := &commands.Context{
-		Variables: make(map[string]interface{}),
-		Logger:    &CLILogger{},
-	}
-
-	if err := cmdList.Execute(ctx); err != nil {
-		return fmt.Errorf("执行tmux命令失败: %v", err)
-	}
-
-	return nil
-}
-
-// =========================== 服务器管理方法 ===========================
-
-// startServer 启动终端服务器
-func (cli *TerminalCLI) startServer() error {
-	if cli.server != nil && cli.server.IsRunning() {
-		fmt.Println("✅ 终端服务器已在运行")
-		return nil
-	}
-
-	var err error
-	cli.server, err = terminal.NewTerminalServer(cli.config, cli.sessionManager)
-	if err != nil {
-		return fmt.Errorf("创建终端服务器失败: %v", err)
-	}
-
-	if err := cli.server.Start(); err != nil {
-		return fmt.Errorf("启动终端服务器失败: %v", err)
-	}
-
-	fmt.Println("✅ 终端服务器启动成功")
-	return nil
-}
-
-// stopServer 停止终端服务器
-func (cli *TerminalCLI) stopServer() error {
-	if cli.server == nil || !cli.server.IsRunning() {
-		fmt.Println("ℹ️  终端服务器未运行")
-		return nil
-	}
-
-	if err := cli.server.Stop(); err != nil {
-		return fmt.Errorf("停止终端服务器失败: %v", err)
-	}
-
-	fmt.Println("✅ 终端服务器已停止")
-	return nil
-}
-
-// serverStatus 查看服务器状态
-func (cli *TerminalCLI) serverStatus() error {
-	if cli.server == nil {
-		fmt.Println("📊 终端服务器状态: 未创建")
-		return nil
-	}
-
-	if cli.server.IsRunning() {
-		fmt.Printf("📊 终端服务器状态: 运行中\n")
-		fmt.Printf("📁 Socket路径: %s\n", cli.server.GetSocketPath())
-
-		sessions := cli.sessionManager.ListSessions()
-		fmt.Printf("📋 活动会话数: %d\n", len(sessions))
-		for _, session := range sessions {
-			fmt.Printf("  - %s (%d 窗口)\n", session.Name, len(session.Windows))
+	// 获取目标会话
+	var sessionID string
+	if targetSession != "" {
+		// 检查目标会话是否存在
+		session, err := cli.sessionManager.GetSessionByName(targetSession)
+		if err != nil || session == nil {
+			return fmt.Errorf("❌ 目标会话 '%s' 不存在\n💡 查看会话列表: clixgo terminal ls\n💡 创建会话: clixgo terminal new-session %s", targetSession, targetSession)
 		}
+		sessionID = session.ID
 	} else {
-		fmt.Println("📊 终端服务器状态: 已停止")
+		// 使用第一个可用会话
+		sessions := cli.sessionManager.ListSessions()
+		if len(sessions) == 0 {
+			return fmt.Errorf("❌ 没有可用的会话\n💡 创建会话: clixgo terminal new-session")
+		}
+		sessionID = sessions[0].ID
+	}
+
+	// 创建窗口
+	window, err := cli.sessionManager.CreateWindow(sessionID, windowName)
+	if err != nil {
+		return fmt.Errorf("❌ 创建窗口失败: %v\n💡 可能原因:\n  • 没有活动会话\n  • 窗口名冲突\n🔧 解决方案:\n  • 检查会话: clixgo terminal ls\n  • 创建会话: clixgo terminal new-session", err)
+	}
+
+	if windowName != "" {
+		fmt.Printf("✅ 成功创建窗口 '%s'\n", window.Name)
+	} else {
+		fmt.Printf("✅ 成功创建新窗口\n")
 	}
 
 	return nil
 }
 
-// showInfo 显示信息
-func (cli *TerminalCLI) showInfo() error {
-	supportedCommands := cli.parser.GetSupportedTmuxCommands()
-	keyBindings := cli.parser.GetKeyBindings()
+// executeSplitWindow 执行分割窗口命令
+func (cli *TerminalCLI) executeSplitWindow(cmd *cobra.Command, args []string) error {
+	horizontal, _ := cmd.Flags().GetBool("horizontal")
+	vertical, _ := cmd.Flags().GetBool("vertical")
 
-	fmt.Printf(`
-🎯 ClixGo Terminal v2.0 - 增强版终端多路复用器
+	// 默认垂直分割
+	if !horizontal && !vertical {
+		vertical = true
+	}
 
-📊 兼容性统计:
-- ✅ 会话管理: 100%% tmux兼容 (new/attach/list/kill)
-- ✅ 窗口操作: 90%% tmux兼容 (new/split/kill/rename)  
-- ✅ 面板控制: 85%% tmux兼容 (split/select/resize)
-- ✅ 快捷键: %d个快捷键绑定支持
-- ✅ 命令别名: %d个tmux命令别名
+	direction := "vertical"
+	if horizontal {
+		direction = "horizontal"
+	}
 
-⚡ 性能优势:
-- 🚀 启动速度: 快3-5倍 (vs tmux)
-- 💾 内存占用: 减少60%% (vs tmux)  
-- 🔄 会话恢复: 快10倍 (vs tmux)
-- 📊 并发处理: 提升40%% (vs tmux)
+	// 获取第一个可用会话和窗口
+	sessions := cli.sessionManager.ListSessions()
+	if len(sessions) == 0 {
+		return fmt.Errorf("❌ 没有可用的会话\n💡 创建会话: clixgo terminal new-session")
+	}
 
-🎨 现代化特性:
-- 🖱️ 现代鼠标支持
-- 🎨 智能主题系统  
-- 📱 响应式布局
-- 🔄 自动会话保存
-- 📊 内置性能监控
-- 🤖 AI命令建议 (计划中)
+	session := sessions[0]
+	if len(session.Windows) == 0 {
+		return fmt.Errorf("❌ 会话中没有窗口\n💡 创建窗口: clixgo terminal new-window")
+	}
 
-💡 迁移指南:
-  1. 现有tmux命令100%%兼容
-  2. 配置文件可直接导入
-  3. 快捷键保持一致
-  4. 无需重新学习
+	// 分割窗口
+	_, err := cli.sessionManager.SplitPane(session.ID, 0, direction)
+	if err != nil {
+		return fmt.Errorf("❌ 分割窗口失败: %v\n💡 可能原因:\n  • 没有活动会话\n  • 窗口太小无法分割\n🔧 解决方案:\n  • 检查会话: clixgo terminal ls\n  • 放大终端窗口", err)
+	}
 
-🚀 快速开始:
-  clixgo terminal new work          # 创建工作会话
-  clixgo terminal attach work       # 连接工作会话
-  clixgo terminal ls               # 列出所有会话
-  clixgo terminal key "c"          # 模拟Ctrl-b c
-  clixgo terminal exec "split-window -h" # 直接执行tmux命令
-`, len(keyBindings), len(supportedCommands))
+	directionName := "垂直"
+	if horizontal {
+		directionName = "水平"
+	}
+	fmt.Printf("✅ 成功进行%s分割\n", directionName)
 
 	return nil
 }
 
-// migrateFromTmux 从tmux迁移
-func (cli *TerminalCLI) migrateFromTmux() error {
-	fmt.Println("🔄 tmux迁移工具")
-	fmt.Println("📋 支持的迁移功能:")
-	fmt.Println("  - 配置文件迁移 (.tmux.conf)")
-	fmt.Println("  - 会话状态导入")
-	fmt.Println("  - 快捷键绑定转换")
-	fmt.Println("")
-	fmt.Println("💡 提示: 大部分tmux配置可以直接在ClixGo中使用")
-	fmt.Println("🚀 建议: 先使用 'clixgo terminal exec' 测试现有tmux命令")
+// =========================== 标志设置方法 ===========================
 
-	return nil
-}
-
-// =========================== 标志配置方法 ===========================
-
-// addNewSessionFlags 添加new-session命令标志
 func (cli *TerminalCLI) addNewSessionFlags(cmd *cobra.Command) {
-	cmd.Flags().BoolP("detached", "d", false, "创建会话但不连接")
 	cmd.Flags().StringP("session-name", "s", "", "会话名称")
+	cmd.Flags().BoolP("detached", "d", false, "创建分离的会话")
 	cmd.Flags().StringP("window-name", "n", "", "初始窗口名称")
-	cmd.Flags().StringP("start-directory", "c", "", "工作目录")
 }
 
-// addAttachSessionFlags 添加attach-session命令标志
 func (cli *TerminalCLI) addAttachSessionFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("target", "t", "", "目标会话名称")
 	cmd.Flags().BoolP("detach-others", "d", false, "断开其他客户端")
 	cmd.Flags().BoolP("read-only", "r", false, "只读模式")
-	cmd.Flags().StringP("target", "t", "", "目标会话")
 }
 
-// addListSessionsFlags 添加list-sessions命令标志
 func (cli *TerminalCLI) addListSessionsFlags(cmd *cobra.Command) {
 	cmd.Flags().StringP("format", "F", "", "输出格式")
 }
 
-// addKillSessionFlags 添加kill-session命令标志
 func (cli *TerminalCLI) addKillSessionFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("target", "t", "", "目标会话名称")
 	cmd.Flags().BoolP("all", "a", false, "删除所有会话")
-	cmd.Flags().StringP("target", "t", "", "目标会话")
 }
 
-// addNewWindowFlags 添加new-window命令标志
 func (cli *TerminalCLI) addNewWindowFlags(cmd *cobra.Command) {
-	cmd.Flags().StringP("name", "n", "", "窗口名称")
+	cmd.Flags().StringP("window-name", "n", "", "窗口名称")
 	cmd.Flags().StringP("target", "t", "", "目标会话")
-	cmd.Flags().StringP("start-directory", "c", "", "工作目录")
 }
 
-// addSplitWindowFlags 添加split-window命令标志
 func (cli *TerminalCLI) addSplitWindowFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolP("horizontal", "h", false, "水平分割")
 	cmd.Flags().BoolP("vertical", "v", false, "垂直分割")
-	cmd.Flags().StringP("target", "t", "", "目标面板")
-	cmd.Flags().StringP("start-directory", "c", "", "工作目录")
+	cmd.Flags().StringP("start-directory", "c", "", "起始目录")
 }
 
-// =========================== 日志记录器 ===========================
+// =========================== 辅助函数 ===========================
 
-// CLILogger CLI专用日志记录器
-type CLILogger struct{}
-
-func (l *CLILogger) Debug(msg string, args ...interface{}) {
-	// CLI模式下不显示debug日志
-}
-
-func (l *CLILogger) Info(msg string, args ...interface{}) {
-	if len(args) > 0 {
-		fmt.Printf(msg+"\n", args...)
-	} else {
-		fmt.Printf("%s\n", msg)
+// isValidSessionName 验证会话名称是否有效
+func isValidSessionName(name string) bool {
+	if name == "" {
+		return false
 	}
-}
 
-func (l *CLILogger) Error(msg string, args ...interface{}) {
-	if len(args) > 0 {
-		fmt.Printf("❌ "+msg+"\n", args...)
-	} else {
-		fmt.Printf("❌ %s\n", msg)
+	// 会话名只能包含字母、数字、连字符和下划线
+	for _, char := range name {
+		if !((char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			char == '-' || char == '_') {
+			return false
+		}
 	}
+
+	return true
 }

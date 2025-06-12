@@ -1,5 +1,10 @@
-// Package commands provides modern command parsing and execution framework
-// inspired by tmux architecture but optimized for performance
+/*
+* @Author: Lzww0608
+* @Date: 2025-6-12 10:37:03
+* @LastEditors: Lzww0608
+* @LastEditTime: 2025-6-12 10:37:08
+* @Description: 命令行解析器，支持命令注册、别名、参数解析、执行等功能
+ */
 package commands
 
 import (
@@ -199,15 +204,40 @@ func (p *ModernParser) Parse(input string) (*CommandList, error) {
 		return nil, fmt.Errorf("no tokens found")
 	}
 
-	// Parse first command
-	cmdName := tokens[0]
-	cmd, exists := p.GetCommand(cmdName)
-	if !exists {
-		return nil, fmt.Errorf("command not found: %s", cmdName)
+	// Try to find command by combining tokens (support multi-word commands like "session new")
+	var cmd Command
+	var cmdName string
+	var remainingTokens []string
+	var found bool
+
+	// Try combining 1, 2, 3, ... tokens to form command name
+	for i := 1; i <= len(tokens) && i <= 3; i++ { // Limit to 3 words max for performance
+		candidateName := strings.Join(tokens[:i], " ")
+		if c, exists := p.GetCommand(candidateName); exists {
+			cmd = c
+			cmdName = candidateName
+			remainingTokens = tokens[i:]
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// Fallback to single word command
+		cmdName = tokens[0]
+		if c, exists := p.GetCommand(cmdName); exists {
+			cmd = c
+			remainingTokens = tokens[1:]
+			found = true
+		}
+	}
+
+	if !found {
+		return nil, fmt.Errorf("command not found: %s", tokens[0])
 	}
 
 	// Parse arguments
-	args, err := p.parseArguments(cmd, tokens[1:])
+	args, err := p.parseArguments(cmd, remainingTokens)
 	if err != nil {
 		return nil, fmt.Errorf("argument parsing failed: %v", err)
 	}
@@ -223,14 +253,17 @@ func (p *ModernParser) Parse(input string) (*CommandList, error) {
 	}, nil
 }
 
-// tokenize splits input into tokens, respecting quotes
+// tokenize splits input into tokens, respecting quotes and escape sequences
 func (p *ModernParser) tokenize(input string) []string {
 	var tokens []string
 	var current strings.Builder
 	var inQuotes bool
 	var quoteChar rune
 
-	for i, r := range input {
+	runes := []rune(input)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+
 		switch {
 		case r == '"' || r == '\'':
 			if !inQuotes {
@@ -249,18 +282,30 @@ func (p *ModernParser) tokenize(input string) []string {
 				tokens = append(tokens, current.String())
 				current.Reset()
 			}
-		case r == '\\' && i+1 < len(input):
+		case r == '\\' && i+1 < len(runes):
 			// Handle escape sequences
-			next := rune(input[i+1])
-			if next == 'n' {
+			nextRune := runes[i+1]
+			switch nextRune {
+			case 'n':
 				current.WriteRune('\n')
-			} else if next == 't' {
+			case 't':
 				current.WriteRune('\t')
-			} else {
-				current.WriteRune(next)
+			case 'r':
+				current.WriteRune('\r')
+			case '\\':
+				current.WriteRune('\\')
+			case ' ':
+				current.WriteRune(' ')
+			case '"':
+				current.WriteRune('"')
+			case '\'':
+				current.WriteRune('\'')
+			default:
+				// For any other character, just include it literally
+				current.WriteRune(nextRune)
 			}
-			// Skip next character
-			continue
+			// Skip next character since we processed it
+			i++
 		default:
 			current.WriteRune(r)
 		}

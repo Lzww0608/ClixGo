@@ -2,8 +2,8 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
-* @Description: 高级命令处理功能的单元测试
+* @LastEditTime: 2025-6-12 10:30:00
+* @Description: 高级命令处理功能的单元测试 - 质量优化版
  */
 
 package commands
@@ -36,9 +36,10 @@ func TestAWKCommand(t *testing.T) {
 	assert.NoError(t, err, "AWK命令应该成功执行")
 	assert.Equal(t, "abc\ndef\nabc\n", output, "AWK命令应该返回正确结果")
 
-	// 测试错误情况
+	// 测试错误情况 - 语法错误
 	_, err = AWKCommand(input, "{invalid")
 	assert.Error(t, err, "AWK命令应该返回语法错误")
+	assert.Contains(t, err.Error(), "AWK语法错误", "错误信息应该明确指出是语法错误")
 }
 
 // 测试Grep命令
@@ -52,9 +53,10 @@ func TestGrepCommand(t *testing.T) {
 	assert.True(t, strings.Contains(output, "line3 abc"), "Grep命令应该包含匹配行")
 	assert.False(t, strings.Contains(output, "line2 def"), "Grep命令不应该包含不匹配行")
 
-	// 测试没有匹配的情况
-	_, err = GrepCommand(input, "xyz")
-	assert.Error(t, err, "没有匹配应该返回错误")
+	// 测试没有匹配的情况 - 现在这不是错误，只是返回空结果
+	output, err = GrepCommand(input, "xyz")
+	assert.NoError(t, err, "没有匹配不应该返回错误")
+	assert.Empty(t, output, "没有匹配应该返回空字符串")
 }
 
 // 测试Sed命令
@@ -70,9 +72,10 @@ func TestSedCommand(t *testing.T) {
 	assert.Contains(t, output, "line2 def", "Sed命令不应该修改不包含abc的行")
 	assert.Contains(t, output, "line3 xyz", "Sed命令应该替换abc为xyz")
 
-	// 测试错误情况
+	// 测试错误情况 - 语法错误
 	_, err = SedCommand(input, "s/abc")
 	assert.Error(t, err, "Sed命令应该返回语法错误")
+	assert.Contains(t, err.Error(), "sed语法错误", "错误信息应该明确指出是语法错误")
 }
 
 // 测试管道命令
@@ -101,4 +104,5 @@ func TestPipeCommands(t *testing.T) {
 	// 测试无效命令
 	_, err = PipeCommands([]string{"echo test", "invalidcmd"})
 	assert.Error(t, err, "无效命令应该返回错误")
+	assert.Contains(t, err.Error(), "管道命令执行失败", "错误信息应该包含管道执行失败")
 }

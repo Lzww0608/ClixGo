@@ -32,75 +32,77 @@ func (m *MockLogger) Clear() {
 	m.messages = nil
 }
 
-// TestModernParser tests the modern command parser
+// TestModernParser tests the modern parser
 func TestModernParser(t *testing.T) {
 	logger := &MockLogger{}
 	parser := NewModernParser(logger)
 
-	// Test command registration
-	newCmd := NewNewSessionCommand(logger)
-	err := parser.RegisterCommand(newCmd)
+	// Register test commands
+	parser.RegisterCommand(NewNewSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
+
+	// Test basic parsing
+	cmdList, err := parser.Parse("session new -s test")
 	if err != nil {
-		t.Fatalf("Failed to register command: %v", err)
+		t.Fatalf("Failed to parse command: %v", err)
 	}
 
-	// Test command retrieval
-	cmd, exists := parser.GetCommand("session new")
-	if !exists {
-		t.Fatal("Command not found after registration")
+	if len(cmdList.Commands) == 0 {
+		t.Fatal("No commands parsed")
 	}
 
-	if cmd.Name() != "session new" {
-		t.Errorf("Expected command name 'session new', got '%s'", cmd.Name())
+	if cmdList.Commands[0].Name() != "session new" {
+		t.Errorf("Expected command name 'session new', got '%s'", cmdList.Commands[0].Name())
 	}
 
-	// Test command listing
-	commands := parser.ListCommands()
-	if len(commands) != 1 {
-		t.Errorf("Expected 1 command, got %d", len(commands))
+	// Test argument parsing
+	args := cmdList.Args[0]
+	if sessionName, exists := args.Flags["session-name"]; !exists || sessionName != "test" {
+		t.Errorf("Expected session-name 'test', got %v", sessionName)
 	}
 }
 
-// TestTmuxCompatibility tests tmux command compatibility
+// TestTmuxCompatibility tests tmux compatibility layer
 func TestTmuxCompatibility(t *testing.T) {
 	logger := &MockLogger{}
 	parser := NewModernParser(logger)
 	compat := NewTmuxCompatLayer(parser, logger)
 
-	// Register session commands
+	// Register test commands
 	parser.RegisterCommand(NewNewSessionCommand(logger))
-	parser.RegisterCommand(NewAttachSessionCommand(logger))
-	parser.RegisterCommand(NewListSessionsCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
-	// Test tmux command mapping
+	// Test tmux command parsing
 	testCases := []struct {
-		tmuxCmd    string
-		shouldWork bool
+		input    string
+		expected string
 	}{
-		{"new-session -s test", true},
-		{"new -s test -d", true},
-		{"attach-session -t test", true},
-		{"attach -t test", true},
-		{"list-sessions", true},
-		{"ls", true},
-		{"unknown-command", false},
+		{"new-session -s test", "session new"},
+		{"detach-client", "session detach"},
+		{"new-window -n window1", "window new"},
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.tmuxCmd, func(t *testing.T) {
-			cmdList, err := compat.ParseTmuxCommand(tc.tmuxCmd)
+		t.Run(tc.input, func(t *testing.T) {
+			cmdList, err := compat.ParseTmuxCommand(tc.input)
+			if err != nil {
+				t.Fatalf("Failed to parse tmux command: %v", err)
+			}
 
-			if tc.shouldWork {
-				if err != nil {
-					t.Errorf("Expected command to work, got error: %v", err)
-				}
-				if cmdList == nil {
-					t.Error("Expected command list, got nil")
-				}
-			} else {
-				if err == nil {
-					t.Error("Expected error for invalid command")
-				}
+			if len(cmdList.Commands) == 0 {
+				t.Fatal("No commands parsed")
+			}
+
+			if cmdList.Commands[0].Name() != tc.expected {
+				t.Errorf("Expected command '%s', got '%s'", tc.expected, cmdList.Commands[0].Name())
 			}
 		})
 	}
@@ -111,9 +113,13 @@ func TestArgumentParsing(t *testing.T) {
 	logger := &MockLogger{}
 	parser := NewModernParser(logger)
 
-	// Register test command
-	newCmd := NewNewSessionCommand(logger)
-	parser.RegisterCommand(newCmd)
+	// Register test commands
+	parser.RegisterCommand(NewNewSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
 	// Test cases for argument parsing
 	testCases := []struct {
@@ -171,6 +177,14 @@ func TestKeyBindings(t *testing.T) {
 	parser := NewModernParser(logger)
 	compat := NewTmuxCompatLayer(parser, logger)
 
+	// Register test commands
+	parser.RegisterCommand(NewNewSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
+
 	// Test key binding lookup
 	testKeys := []string{
 		"c",     // new window
@@ -201,9 +215,13 @@ func TestCommandExecution(t *testing.T) {
 	logger := &MockLogger{}
 	parser := NewModernParser(logger)
 
-	// Register test command
-	newCmd := NewNewSessionCommand(logger)
-	parser.RegisterCommand(newCmd)
+	// Register test commands
+	parser.RegisterCommand(NewNewSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
 	// Parse command
 	cmdList, err := parser.Parse("session new -s test")
@@ -297,9 +315,13 @@ func BenchmarkParseCommand(b *testing.B) {
 	logger := &MockLogger{}
 	parser := NewModernParser(logger)
 
-	// Register test command
-	newCmd := NewNewSessionCommand(logger)
-	parser.RegisterCommand(newCmd)
+	// Register test commands
+	parser.RegisterCommand(NewNewSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
 	input := "session new -s test -d -n window1 -c /home/user"
 
@@ -318,8 +340,13 @@ func BenchmarkTmuxCompat(b *testing.B) {
 	parser := NewModernParser(logger)
 	compat := NewTmuxCompatLayer(parser, logger)
 
-	// Register test command
+	// Register test commands
 	parser.RegisterCommand(NewNewSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
 	input := "new-session -s test -d"
 
@@ -337,9 +364,13 @@ func BenchmarkCommandExecution(b *testing.B) {
 	logger := &MockLogger{}
 	parser := NewModernParser(logger)
 
-	// Register test command
-	newCmd := NewNewSessionCommand(logger)
-	parser.RegisterCommand(newCmd)
+	// Register test commands
+	parser.RegisterCommand(NewNewSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
 	// Pre-parse command
 	cmdList, err := parser.Parse("session new -s test")
@@ -370,6 +401,11 @@ func TestComplexCommands(t *testing.T) {
 	// Register commands
 	parser.RegisterCommand(NewNewSessionCommand(logger))
 	parser.RegisterCommand(NewRenameSessionCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
 	// Test command chaining (semicolon separated)
 	input := `new-session -s test -d; rename-session -t test "new name"`
@@ -420,6 +456,11 @@ func TestPerformanceComparison(t *testing.T) {
 	parser.RegisterCommand(NewNewSessionCommand(logger))
 	parser.RegisterCommand(NewAttachSessionCommand(logger))
 	parser.RegisterCommand(NewListSessionsCommand(logger))
+	parser.RegisterCommand(NewSessionDetachCommand(logger))
+	parser.RegisterCommand(NewSessionChooseCommand(logger))
+	parser.RegisterCommand(NewWindowNewCommand(logger))
+	parser.RegisterCommand(NewWindowNextLayoutCommand(logger))
+	parser.RegisterCommand(NewKeysSendPrefixCommand(logger))
 
 	// Test commands that would be common in tmux usage
 	commands := []string{

@@ -334,24 +334,39 @@ func (t *TmuxCompatLayer) parseIndividualCommand(cmdStr string) (Command, *Argum
 	// Map to ClixGo command
 	clixGoCmd, exists := t.mappings[tmuxCmd]
 	if !exists {
-		// Check if it's already a ClixGo command
-		if cmd, exists := t.parser.GetCommand(tmuxCmd); exists {
-			args, err := t.parseClixGoArguments(cmd, tokens[1:])
-			return cmd, args, err
+		// Check if it's already a ClixGo command (try multi-word commands first)
+		var cmd Command
+		var found bool
+
+		// Try combining tokens to form multi-word command names
+		for i := 1; i <= len(tokens) && i <= 3; i++ {
+			candidateName := strings.Join(tokens[:i], " ")
+			if c, exists := t.parser.GetCommand(candidateName); exists {
+				cmd = c
+				found = true
+				// Parse remaining tokens as arguments
+				args, err := t.parseClixGoArguments(cmd, tokens[i:])
+				return cmd, args, err
+			}
 		}
-		return nil, nil, fmt.Errorf("unknown command: %s", tmuxCmd)
+
+		if !found {
+			return nil, nil, fmt.Errorf("unknown command: %s", tmuxCmd)
+		}
 	}
 
-	// Parse the mapped ClixGo command
-	clixGoTokens := strings.Fields(clixGoCmd)
-	clixGoCmdName := clixGoTokens[0]
-	if len(clixGoTokens) > 1 {
-		clixGoCmdName = strings.Join(clixGoTokens, " ")
+	// Parse the mapped ClixGo command - try multi-word command names
+	var cmd Command
+	var found bool
+
+	// Try to find the mapped command (could be multi-word like "session new")
+	if c, exists := t.parser.GetCommand(clixGoCmd); exists {
+		cmd = c
+		found = true
 	}
 
-	cmd, exists := t.parser.GetCommand(clixGoCmdName)
-	if !exists {
-		return nil, nil, fmt.Errorf("mapped command not found: %s", clixGoCmdName)
+	if !found {
+		return nil, nil, fmt.Errorf("mapped command not found: %s", clixGoCmd)
 	}
 
 	// Convert tmux arguments to ClixGo arguments
