@@ -163,7 +163,7 @@ func (pm *CreackPTYManager) createCreackPTY(id, command, workingDir string, widt
 
 	// 设置环境变量
 	env := append(os.Environ(),
-		fmt.Sprintf("TERM=%s", getTerminalType()),
+		fmt.Sprintf("TERM=%s", getTermType()),
 		fmt.Sprintf("COLUMNS=%d", width),
 		fmt.Sprintf("LINES=%d", height),
 		"PS1=\\u@\\h:\\w\\$ ", // 设置提示符

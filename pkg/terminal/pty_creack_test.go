@@ -160,6 +160,13 @@ func TestCreackPTY_StartAndStop(t *testing.T) {
 }
 
 func TestCreackPTY_WriteAndRead(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	config := &TerminalConfig{
 		PrefixKey:         "C-b",
 		MouseEnabled:      true,
@@ -223,6 +230,13 @@ func TestCreackPTY_WriteAndRead(t *testing.T) {
 }
 
 func TestCreackPTY_Resize(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	config := &TerminalConfig{
 		PrefixKey:         "C-b",
 		MouseEnabled:      true,
@@ -269,6 +283,13 @@ func TestCreackPTY_Resize(t *testing.T) {
 }
 
 func TestCreackPTYManager_DuplicateID(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	config := &TerminalConfig{
 		PrefixKey:         "C-b",
 		MouseEnabled:      true,
@@ -281,7 +302,7 @@ func TestCreackPTYManager_DuplicateID(t *testing.T) {
 	manager := NewCreackPTYManager(config)
 
 	// 创建第一个PTY
-	_, err := manager.CreateCreackPTY("duplicate", "echo test", "", 80, 24)
+	_, err = manager.CreateCreackPTY("duplicate", "echo test", "", 80, 24)
 	if err != nil {
 		t.Fatalf("创建第一个PTY失败: %v", err)
 	}
@@ -297,6 +318,13 @@ func TestCreackPTYManager_DuplicateID(t *testing.T) {
 }
 
 func TestCreackPTYManager_GetNonexistentPTY(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	config := &TerminalConfig{
 		PrefixKey:         "C-b",
 		MouseEnabled:      true,
@@ -309,7 +337,7 @@ func TestCreackPTYManager_GetNonexistentPTY(t *testing.T) {
 	manager := NewCreackPTYManager(config)
 
 	// 尝试获取不存在的PTY
-	_, err := manager.GetCreackPTY("nonexistent")
+	_, err = manager.GetCreackPTY("nonexistent")
 	if err == nil {
 		t.Error("期望获取不存在的PTY失败，但成功了")
 	}

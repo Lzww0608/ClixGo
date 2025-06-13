@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +23,13 @@ import (
 // =============================================================================
 
 func TestSessionManager_CreateSession(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	sm := NewSessionManager(DefaultConfig)
 
 	t.Run("创建有名称的会话", func(t *testing.T) {
@@ -51,6 +59,13 @@ func TestSessionManager_CreateSession(t *testing.T) {
 }
 
 func TestSessionManager_GetSession(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	sm := NewSessionManager(DefaultConfig)
 	session, err := sm.CreateSession("test-session")
 	require.NoError(t, err)
@@ -70,6 +85,13 @@ func TestSessionManager_GetSession(t *testing.T) {
 }
 
 func TestSessionManager_ListSessions(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	sm := NewSessionManager(DefaultConfig)
 
 	t.Run("空会话列表", func(t *testing.T) {
@@ -93,6 +115,13 @@ func TestSessionManager_ListSessions(t *testing.T) {
 }
 
 func TestSessionManager_AttachDetachSession(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	sm := NewSessionManager(DefaultConfig)
 	session, err := sm.CreateSession("test-session")
 	require.NoError(t, err)
@@ -122,6 +151,13 @@ func TestSessionManager_AttachDetachSession(t *testing.T) {
 }
 
 func TestSessionManager_KillSession(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	sm := NewSessionManager(DefaultConfig)
 	session, err := sm.CreateSession("test-session")
 	require.NoError(t, err)
@@ -149,6 +185,13 @@ func TestSessionManager_KillSession(t *testing.T) {
 // =============================================================================
 
 func TestSessionManager_CreateWindow(t *testing.T) {
+	// 初始化logger
+	err := logger.InitLogger()
+	if err != nil {
+		t.Fatalf("初始化logger失败: %v", err)
+	}
+	defer logger.Close()
+
 	sm := NewSessionManager(DefaultConfig)
 	session, err := sm.CreateSession("test-session")
 	require.NoError(t, err)
