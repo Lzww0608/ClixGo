@@ -1,0 +1,312 @@
+name: Performance Baseline Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'pkg/**'
+      - 'cmd/**'
+      - 'benchmarks/**'
+      - 'go.mod'
+      - 'go.sum'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'pkg/**'
+      - 'cmd/**'
+      - 'benchmarks/**'
+      - 'go.mod'
+      - 'go.sum'
+  schedule:
+    # 每天凌晨2点运行性能基线测试
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: '测试模式'
+        required: true
+        default: 'single'
+        type: choice
+        options:
+          - single
+          - monitor
+      duration:
+        description: '监控持续时间 (仅monitor模式)'
+        required: false
+        default: '5m'
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    strategy:
+      matrix:
+        go-version: [1.21, 1.22, 1.23]
+        
+    name: Performance Test (Go ${{ matrix.go-version }})
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+        
+    - name: Install Dependencies
+      run: |
+        go mod tidy
+        go mod download
+        
+    - name: Install tmux (for comparison)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y tmux
+        tmux -V
+        
+    - name: Build Benchmark Tool
+      run: |
+        go build -o benchmark ./cmd/benchmark
+        chmod +x benchmark
+        
+    - name: Run Performance Baseline Test
+      id: baseline
+      run: |
+        echo "🚀 Running performance baseline test..."
+        ./benchmark -format json -output performance-baseline.json -verbose
+        
+        # 检查文件是否生成
+        if [ -f performance-baseline.json ]; then
+          echo "baseline_generated=true" >> $GITHUB_OUTPUT
+          echo "Performance baseline test completed successfully"
+        else
+          echo "baseline_generated=false" >> $GITHUB_OUTPUT
+          echo "❌ Performance baseline test failed"
+          exit 1
+        fi
+        
+    - name: Upload Performance Report
+      if: steps.baseline.outputs.baseline_generated == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-baseline-go${{ matrix.go-version }}
+        path: |
+          performance-baseline.json
+        retention-days: 30
+        
+    - name: Run Benchmark Tests
+      run: |
+        echo "🧪 Running Go benchmark tests..."
+        go test ./benchmarks -bench=. -benchmem -count=3 -timeout=300s > benchmark-results.txt 2>&1 || true
+        cat benchmark-results.txt
+        
+    - name: Upload Benchmark Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-go${{ matrix.go-version }}
+        path: benchmark-results.txt
+        retention-days: 7
+        
+    - name: Parse Performance Metrics
+      if: steps.baseline.outputs.baseline_generated == 'true'
+      run: |
+        echo "📊 Parsing performance metrics..."
+        
+        # 提取关键指标用于PR评论
+        STARTUP_TIME=$(jq -r '.performance_metrics.startup_time_ms' performance-baseline.json)
+        MEMORY_USAGE=$(jq -r '.performance_metrics.memory_usage_mb' performance-baseline.json)
+        STARTUP_SPEEDUP=$(jq -r '.performance_metrics.startup_speedup' performance-baseline.json)
+        MEMORY_REDUCTION=$(jq -r '.performance_metrics.memory_reduction' performance-baseline.json)
+        
+        # 检查目标达成情况
+        STARTUP_OK=$(jq -r '.performance_goals.startup_time_achieved' performance-baseline.json)
+        MEMORY_OK=$(jq -r '.performance_goals.memory_usage_achieved' performance-baseline.json)
+        SPEEDUP_OK=$(jq -r '.performance_goals.startup_speedup_achieved' performance-baseline.json)
+        REDUCTION_OK=$(jq -r '.performance_goals.memory_reduction_achieved' performance-baseline.json)
+        
+        echo "STARTUP_TIME=$STARTUP_TIME" >> $GITHUB_ENV
+        echo "MEMORY_USAGE=$MEMORY_USAGE" >> $GITHUB_ENV
+        echo "STARTUP_SPEEDUP=$STARTUP_SPEEDUP" >> $GITHUB_ENV
+        echo "MEMORY_REDUCTION=$MEMORY_REDUCTION" >> $GITHUB_ENV
+        echo "STARTUP_OK=$STARTUP_OK" >> $GITHUB_ENV
+        echo "MEMORY_OK=$MEMORY_OK" >> $GITHUB_ENV
+        echo "SPEEDUP_OK=$SPEEDUP_OK" >> $GITHUB_ENV
+        echo "REDUCTION_OK=$REDUCTION_OK" >> $GITHUB_ENV
+        
+        # 计算总体得分
+        SCORE=0
+        [ "$STARTUP_OK" = "true" ] && SCORE=$((SCORE + 25))
+        [ "$MEMORY_OK" = "true" ] && SCORE=$((SCORE + 25))
+        [ "$SPEEDUP_OK" = "true" ] && SCORE=$((SCORE + 25))
+        [ "$REDUCTION_OK" = "true" ] && SCORE=$((SCORE + 25))
+        
+        echo "PERFORMANCE_SCORE=$SCORE" >> $GITHUB_ENV
+        
+        # 如果性能得分低于75%，标记为失败
+        if [ $SCORE -lt 75 ]; then
+          echo "⚠️ Performance score too low: $SCORE/100"
+          echo "PERFORMANCE_STATUS=warning" >> $GITHUB_ENV
+        else
+          echo "✅ Performance score acceptable: $SCORE/100"
+          echo "PERFORMANCE_STATUS=success" >> $GITHUB_ENV
+        fi
+
+  performance-comparison:
+    runs-on: ubuntu-latest
+    needs: performance-test
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Download Performance Reports
+      uses: actions/download-artifact@v4
+      with:
+        pattern: performance-baseline-*
+        merge-multiple: true
+        
+    - name: Compare Performance with Main Branch
+      run: |
+        echo "📊 Comparing performance with main branch..."
+        
+        # 这里可以实现与main分支的性能对比逻辑
+        # 由于是演示，先输出当前的性能指标
+        
+        for file in performance-baseline-*.json; do
+          if [ -f "$file" ]; then
+            echo "Processing $file..."
+            GO_VERSION=$(echo $file | sed 's/.*go\([0-9.]*\)\.json/\1/')
+            
+            STARTUP_TIME=$(jq -r '.performance_metrics.startup_time_ms' "$file")
+            MEMORY_USAGE=$(jq -r '.performance_metrics.memory_usage_mb' "$file")
+            
+            echo "Go $GO_VERSION: Startup ${STARTUP_TIME}ms, Memory ${MEMORY_USAGE}MB"
+          fi
+        done
+
+  continuous-monitoring:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_mode == 'monitor'
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout Code  
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+        cache: true
+        
+    - name: Install Dependencies
+      run: |
+        go mod tidy
+        sudo apt-get update && sudo apt-get install -y tmux
+        
+    - name: Build Benchmark Tool
+      run: |
+        go build -o benchmark ./cmd/benchmark
+        chmod +x benchmark
+        
+    - name: Run Continuous Monitoring
+      run: |
+        echo "🔄 Starting continuous performance monitoring..."
+        timeout ${{ github.event.inputs.duration || '5m' }} ./benchmark -mode monitor -interval 30s -verbose || true
+        echo "📊 Continuous monitoring completed"
+
+  performance-regression-check:
+    runs-on: ubuntu-latest
+    needs: performance-test
+    if: always()
+    
+    steps:
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: performance-baseline-*
+        merge-multiple: true
+        
+    - name: Check for Performance Regression
+      run: |
+        echo "🔍 Checking for performance regressions..."
+        
+        REGRESSION_FOUND=false
+        
+        for file in performance-baseline-*.json; do
+          if [ -f "$file" ]; then
+            GO_VERSION=$(echo $file | sed 's/.*go\([0-9.]*\)\.json/\1/')
+            
+            # 检查是否有性能回归
+            STARTUP_OK=$(jq -r '.performance_goals.startup_time_achieved' "$file")
+            MEMORY_OK=$(jq -r '.performance_goals.memory_usage_achieved' "$file")
+            
+            if [ "$STARTUP_OK" != "true" ] || [ "$MEMORY_OK" != "true" ]; then
+              echo "❌ Performance regression detected in Go $GO_VERSION"
+              REGRESSION_FOUND=true
+            else
+              echo "✅ No performance regression in Go $GO_VERSION"
+            fi
+          fi
+        done
+        
+        if [ "$REGRESSION_FOUND" = "true" ]; then
+          echo "💥 Performance regression detected!"
+          echo "Please review the performance impact of your changes."
+          exit 1
+        else
+          echo "🎉 No performance regressions found!"
+        fi
+
+  notify-results:
+    runs-on: ubuntu-latest
+    needs: [performance-test, performance-regression-check]
+    if: always() && github.event_name == 'pull_request'
+    
+    steps:  
+    - name: Create Performance Comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          // 构建性能报告评论
+          let comment = `## 🚀 Performance Baseline Report\n\n`;
+          
+          // 添加测试状态
+          const testSuccess = '${{ needs.performance-test.result }}' === 'success';
+          const regressionCheck = '${{ needs.performance-regression-check.result }}' === 'success';
+          
+          if (testSuccess && regressionCheck) {
+            comment += `✅ **All performance tests passed!**\n\n`;
+          } else {
+            comment += `⚠️ **Some performance issues detected**\n\n`;
+          }
+          
+          comment += `### Performance Metrics\n`;
+          comment += `| Metric | Value | Target | Status |\n`;
+          comment += `|--------|--------|--------|--------|\n`;
+          comment += `| Startup Time | ${process.env.STARTUP_TIME || 'N/A'}ms | < 30ms | ${process.env.STARTUP_OK === 'true' ? '✅' : '❌'} |\n`;
+          comment += `| Memory Usage | ${process.env.MEMORY_USAGE || 'N/A'}MB | < 8MB | ${process.env.MEMORY_OK === 'true' ? '✅' : '❌'} |\n`;
+          comment += `| Startup Speedup | ${process.env.STARTUP_SPEEDUP || 'N/A'}x | >= 5x | ${process.env.SPEEDUP_OK === 'true' ? '✅' : '❌'} |\n`;
+          comment += `| Memory Reduction | ${process.env.MEMORY_REDUCTION || 'N/A'}% | >= 70% | ${process.env.REDUCTION_OK === 'true' ? '✅' : '❌'} |\n\n`;
+          
+          comment += `**Overall Score: ${process.env.PERFORMANCE_SCORE || 0}/100**\n\n`;
+          
+          comment += `<details>\n<summary>📊 View detailed results</summary>\n\n`;
+          comment += `- Build artifacts contain detailed performance reports\n`;
+          comment += `- Benchmark results available in CI logs\n`;
+          comment += `- Performance regression check: ${regressionCheck ? 'Passed' : 'Failed'}\n`;
+          comment += `</details>\n`;
+          
+          // 发布评论
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          }); 

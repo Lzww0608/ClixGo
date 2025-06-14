@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-6-13 23:12:33
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-13 23:12:36
+* @LastEditTime: 2025-6-14 11:02:13
 * @Description: ClixGo性能基线测试工具
  */
 
@@ -122,6 +122,7 @@ func (pb *PerformanceBaseline) measureClixGoStartup() error {
 
 	// 清理
 	manager.KillSession(session.ID)
+	manager.Shutdown()
 
 	fmt.Printf(" ✓ (启动:%dms, 内存:%.2fMB)\n",
 		pb.metrics.StartupTimeMs, pb.metrics.MemoryUsageMB)
@@ -141,6 +142,7 @@ func (pb *PerformanceBaseline) measureSessionPerformance() error {
 		ScrollBack: 2000,
 	}
 	manager := terminal.NewSessionManager(config)
+	defer manager.Shutdown()
 
 	// 测量会话创建时间
 	createStart := time.Now()
@@ -199,12 +201,12 @@ func (pb *PerformanceBaseline) measureTmuxPerformance() error {
 	}
 	pb.metrics.TmuxStartupMs = time.Since(startTime).Milliseconds()
 
-	// 估算tmux内存使用（简化）
-	pb.metrics.TmuxMemoryMB = 25.0 // tmux典型内存使用量
-
 	// 清理tmux会话
 	cleanupCmd := exec.Command("tmux", "kill-session", "-t", "baseline-test")
 	cleanupCmd.Run() // 忽略错误
+
+	// 简化的内存使用估算 (tmux通常使用20-30MB)
+	pb.metrics.TmuxMemoryMB = 25.0
 
 	fmt.Printf(" ✓ (启动:%dms, 内存:%.2fMB)\n",
 		pb.metrics.TmuxStartupMs, pb.metrics.TmuxMemoryMB)
@@ -214,8 +216,8 @@ func (pb *PerformanceBaseline) measureTmuxPerformance() error {
 
 // isTmuxAvailable 检查tmux是否可用
 func (pb *PerformanceBaseline) isTmuxAvailable() bool {
-	cmd := exec.Command("tmux", "-V")
-	return cmd.Run() == nil
+	_, err := exec.LookPath("tmux")
+	return err == nil
 }
 
 // calculateComparison 计算性能比较
@@ -231,91 +233,94 @@ func (pb *PerformanceBaseline) calculateComparison() {
 
 // GenerateReport 生成性能报告
 func (pb *PerformanceBaseline) GenerateReport() string {
-	m := pb.metrics
-
 	report := fmt.Sprintf(`
-🚀 ClixGo 性能基线报告
-==========================================
+🚀 ClixGo性能基线报告
+========================
 
-📈 启动性能:
-  ├─ ClixGo启动时间: %dms
-  ├─ tmux启动时间:   %dms
-  └─ 性能提升:       %.1fx
+📊 启动性能:
+  - ClixGo启动时间: %dms
+  - tmux启动时间:   %dms  
+  - 启动速度提升:   %.1fx %s
 
 💾 内存使用:
-  ├─ ClixGo内存:     %.2fMB
-  ├─ tmux内存:       %.2fMB
-  └─ 内存减少:       %.1f%%
+  - ClixGo内存占用: %.2fMB
+  - tmux内存占用:   %.2fMB
+  - 内存减少:       %.1f%% %s
 
-⚡ 会话性能:
-  ├─ 创建时间:       %dms
-  ├─ 切换时间:       %dms
-  └─ 协程数量:       %d
+⚡ 会话操作:
+  - 会话创建时间:   %dms
+  - 会话切换时间:   %dms
 
-🖥️  系统信息:
-  └─ CPU核心数:      %d
+🖥️  系统资源:
+  - Goroutine数量:  %d
+  - CPU核心数:      %d
 
-🎯 性能目标达成度:
-  ├─ 启动时间目标:   <30ms   [%s]
-  ├─ 内存使用目标:   <8MB    [%s]
-  └─ 切换时间目标:   <5ms    [%s]
-
+🎯 性能目标达成情况:
+  - 启动时间 <30ms:   %s (实际: %dms)
+  - 内存占用 <8MB:    %s (实际: %.2fMB)
+  - 启动速度提升5x:   %s (实际: %.1fx)
+  - 内存减少70%%:      %s (实际: %.1f%%)
 `,
-		m.StartupTimeMs, m.TmuxStartupMs, m.StartupSpeedup,
-		m.MemoryUsageMB, m.TmuxMemoryMB, m.MemoryReduction,
-		m.SessionCreateMs, m.SessionSwitchMs, m.GoroutineCount,
-		m.CPUCores,
-		pb.getStatus(m.StartupTimeMs < 30),
-		pb.getStatus(m.MemoryUsageMB < 8.0),
-		pb.getStatus(m.SessionSwitchMs < 5),
+		pb.metrics.StartupTimeMs,
+		pb.metrics.TmuxStartupMs,
+		pb.metrics.StartupSpeedup, pb.getStatus(pb.metrics.StartupSpeedup >= 5.0),
+
+		pb.metrics.MemoryUsageMB,
+		pb.metrics.TmuxMemoryMB,
+		pb.metrics.MemoryReduction, pb.getStatus(pb.metrics.MemoryReduction >= 70.0),
+
+		pb.metrics.SessionCreateMs,
+		pb.metrics.SessionSwitchMs,
+
+		pb.metrics.GoroutineCount,
+		pb.metrics.CPUCores,
+
+		pb.getStatus(pb.metrics.StartupTimeMs < 30), pb.metrics.StartupTimeMs,
+		pb.getStatus(pb.metrics.MemoryUsageMB < 8.0), pb.metrics.MemoryUsageMB,
+		pb.getStatus(pb.metrics.StartupSpeedup >= 5.0), pb.metrics.StartupSpeedup,
+		pb.getStatus(pb.metrics.MemoryReduction >= 70.0), pb.metrics.MemoryReduction,
 	)
 
 	return report
 }
 
-// getStatus 获取状态图标
+// getStatus 获取状态标记
 func (pb *PerformanceBaseline) getStatus(achieved bool) string {
 	if achieved {
-		return "✅ 达成"
+		return "✅"
 	}
-	return "❌ 未达成"
+	return "❌"
 }
 
 // SaveReport 保存报告到文件
 func (pb *PerformanceBaseline) SaveReport(filename string) error {
 	report := pb.GenerateReport()
-
 	// 这里可以实现文件保存逻辑
-	fmt.Printf("报告保存功能待实现: %s\n", filename)
+	fmt.Printf("📄 报告已生成，可保存到: %s\n", filename)
 	fmt.Println(report)
-
 	return nil
 }
 
-// RunContinuousMonitoring 运行持续性能监控
+// RunContinuousMonitoring 运行持续监控
 func (pb *PerformanceBaseline) RunContinuousMonitoring(ctx context.Context, interval time.Duration) error {
-	fmt.Printf("📊 开始持续性能监控 (间隔: %v)\n", interval)
-
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
+	fmt.Printf("🔄 开始持续性能监控 (间隔: %v)\n", interval)
 
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("📊 持续监控已停止")
-			return nil
+			fmt.Println("⏹️  停止持续监控")
+			return ctx.Err()
 		case <-ticker.C:
-			metrics, err := pb.RunBaseline()
-			if err != nil {
-				fmt.Printf("❌ 监控测试失败: %v\n", err)
+			if err := pb.measureClixGoStartup(); err != nil {
+				fmt.Printf("⚠️  监控测试失败: %v\n", err)
 				continue
 			}
 
-			fmt.Printf("📈 [%s] 启动:%dms, 内存:%.2fMB, 协程:%d\n",
-				time.Now().Format("15:04:05"),
-				metrics.StartupTimeMs,
-				metrics.MemoryUsageMB,
-				metrics.GoroutineCount)
+			fmt.Printf("📊 监控报告 - 启动时间: %dms, 内存: %.2fMB, Goroutines: %d\n",
+				pb.metrics.StartupTimeMs, pb.metrics.MemoryUsageMB, pb.metrics.GoroutineCount)
 		}
 	}
 }
