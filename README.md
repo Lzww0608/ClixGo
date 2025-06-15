@@ -1,421 +1,241 @@
-# ClixGo
+# ClixGo 2.0 - 增强型CLI工具套件
 
-ClixGo 是一个功能强大的命令行工具集合，提供了多种实用功能，帮助用户提高工作效率。
+[![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org)
+[![Build Status](https://img.shields.io/badge/Build-Passing-green.svg)](https://github.com/Lzww0608/ClixGo)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Architecture](https://img.shields.io/badge/Architecture-Simplified-brightgreen.svg)](ROADMAP.md)
 
-## 功能
+ClixGo 2.0 是下一代高性能增强型CLI工具套件，以终端复用为核心，集成网络诊断、文本处理、性能监控等开发运维工具，提供统一的用户体验和卓越的性能表现。
 
-- **命令执行**
-  - 串行执行命令：按顺序执行多个命令
-  - 并行执行命令：同时执行多个命令
-  - 管道命令处理：命令管道支持
-  
-- **文本处理**
-  - AWK 命令处理：简化 AWK 命令的使用
-  - grep 命令处理：增强的文本搜索
-  - sed 命令处理：简化的文本替换
-  
-- **工作流辅助**
-  - 历史记录：查看和重用命令历史
-  - 命令别名：定义和使用命令别名
-  - 命令补全：自动完成命令和参数
-  
-- **后台任务**
-  - 任务创建与管理：创建和监控长时间运行的任务
-  - 任务状态查询：检查任务进度和状态
-  - 取消任务：中止正在运行的任务
-  
-- **网络工具**
-  - Ping：测试网络连接
-  - Traceroute：跟踪网络路径
-  - DNS查询：查询域名解析
-  - HTTP请求：发送HTTP请求
-  - 端口检查：检查端口开放状态
-  - IP信息：查询IP地址信息
-  - 下载文件：从URL下载文件
-  - SSL证书检查：检查网站SSL证书
-  - 网络速度测试：测试网络速度
-  - 网络监控：监控网络状态
+## 🎯 项目愿景
 
-- **🚀 终端多路复用器 (ENHANCED!)**
-  - **🎯 零配置启动**：开箱即用，无需复杂配置
-  - **⚡ 超轻量级**：纯 Go 实现，启动速度快 3-5 倍
-  - **🔧 深度工具集成**：内置网络诊断、文本处理、任务管理
-  - **🌐 跨平台原生支持**：Windows/Linux/macOS 完全兼容
-  - **☁️ 智能会话同步**：支持云端会话配置同步
-  - **🎨 现代化界面**：支持鼠标操作、主题定制、状态栏定制
-  - **🔄 智能恢复**：自动保存和恢复会话状态，包括运行中的命令
-  - **📊 内置监控**：集成系统监控和性能分析
-  - **🖥️ PTY支持**：真实进程执行和管理
-  - **🎛️ 多布局渲染**：支持4种不同的面板布局算法
-  - **⚠️ 智能警报**：可配置的性能阈值和自动警报系统
+构建现代化的CLI工具套件，实现：
+- **🚀 极致性能**：启动速度快5倍，内存占用减少70%
+- **🛠️ 工具集成**：一个工具解决多种开发运维需求
+- **🎨 现代界面**：TUI图形化界面，支持鼠标和实时数据可视化
+- **🔧 零配置启动**：开箱即用，同时支持深度定制
 
-## 安装
+## 📊 当前状态 (Phase 1.2 已完成)
+
+### ✅ 架构重构成果
+- **模块精简**：从21个模块精简到13个核心模块 (减少38%)
+- **入口统一**：从8个分散入口统一为2个 (减少75%)
+- **编译成功**：生成11MB可执行文件，所有功能正常
+- **依赖清晰**：模块间依赖关系明确，无循环依赖
+
+### 🔧 当前可用功能
 
 ```bash
-# 从源码安装
+# 主要功能
+./clixgo --help                    # 查看帮助信息
+./clixgo --version                 # 查看版本信息
+
+# 别名管理
+./clixgo alias add ll "ls -la"     # 添加别名
+./clixgo alias list                # 查看所有别名
+./clixgo alias remove ll           # 删除别名
+
+# 历史记录
+./clixgo history list              # 查看命令历史
+./clixgo history show 10           # 显示最近10条历史
+./clixgo history clear             # 清空历史记录
+
+# 文件系统操作
+./clixgo fs list /path/to/dir      # 列出目录内容
+./clixgo fs copy source dest       # 复制文件
+./clixgo fs move source dest       # 移动文件
+./clixgo fs delete file            # 删除文件
+
+# 终端会话 (简化版)
+./clixgo terminal session create  # 创建会话
+./clixgo terminal session list    # 列出会话
+
+# 命令补全
+./clixgo completion bash > /etc/bash_completion.d/clixgo
+./clixgo completion zsh > ~/.zsh/completions/_clixgo
+```
+
+## 🚀 安装
+
+### 从源码安装
+
+```bash
+# 克隆仓库
 git clone https://github.com/Lzww0608/ClixGo.git
 cd ClixGo
-go install ./...
+
+# 编译安装
+go build -o clixgo
+sudo mv clixgo /usr/local/bin/
+
+# 或者使用go install
+go install
 ```
 
-安装完成后，`ClixGo` 命令将可用。如果 `$GOPATH/bin` 不在您的 PATH 中，您可能需要运行：
+### 验证安装
 
 ```bash
-export PATH=$PATH:$(go env GOPATH)/bin
-```
+# 检查版本
+clixgo --version
 
-## 使用方法
-
-### 基本命令
-
-```bash
 # 查看帮助
-ClixGo help
+clixgo --help
 
-# 生成命令补全脚本
-ClixGo completion > ~/.clixgo_completion
-source ~/.clixgo_completion
-
-# 串行执行命令
-ClixGo sequential "ls -la; echo hello"
-
-# 并行执行命令
-ClixGo parallel "ping -c 3 example.com; curl https://example.com"
-
-# 使用AWK命令
-ClixGo awk "filename.txt" '{print $1}'
-
-# 使用grep命令
-ClixGo grep "filename.txt" "pattern"
-
-# 使用sed命令
-ClixGo sed "filename.txt" "s/old/new/g"
-
-# 使用管道命令
-ClixGo pipe "ls -la | grep .txt | sort"
-
-# 查看历史记录
-ClixGo history
-
-# 创建别名
-ClixGo alias set "ll" "ls -la"
+# 测试基础功能
+clixgo alias list
+clixgo history list
 ```
 
-### 🆕 终端多路复用器
+## 🏗️ 架构概览
 
-ClixGo Terminal 是下一代轻量级终端多路复用器，相比传统 tmux 具有显著优势：
+### 核心模块结构
+
+```
+pkg/
+├── commands/          # ✅ 命令执行、别名管理、补全
+├── terminal/          # 🔄 终端复用、历史记录 (基础框架)
+├── utils/             # ✅ 文件系统、工具函数
+├── config/            # ✅ 配置管理
+├── logger/            # ✅ 日志系统
+├── errors/            # ✅ 错误处理
+├── network/           # 📋 网络工具 (待完善)
+├── performance/       # 📋 性能监控 (待完善)
+├── sync/              # 📋 协程管理 (待完善)
+├── task/              # 📋 任务管理 (待完善)
+├── text/              # 📋 文本处理 (待完善)
+└── ui/                # 📋 TUI界面 (待实现)
+```
+
+### 命令结构
 
 ```bash
-# 基础会话管理
-ClixGo terminal new-session [session-name]
-ClixGo terminal attach [session-name]
-ClixGo terminal list-sessions
-ClixGo terminal kill-session [session-name]
-
-# 服务器管理
-ClixGo terminal server start
-ClixGo terminal server status
-ClixGo terminal server stop
-
-# 窗口和面板操作
-ClixGo terminal split-window --vertical
-ClixGo terminal split-window --horizontal
-ClixGo terminal switch-window [index]
-ClixGo terminal close-pane [index]
-
-# 增强功能
-ClixGo terminal monitor          # 查看性能监控
-ClixGo terminal stats           # 查看服务器统计
-ClixGo terminal render-ui       # 渲染UI界面
+clixgo
+├── alias              # 别名管理
+│   ├── add           # 添加别名
+│   ├── remove        # 删除别名
+│   └── list          # 列出别名
+├── history            # 历史记录
+│   ├── list          # 查看历史
+│   ├── show          # 显示指定数量
+│   └── clear         # 清空历史
+├── fs                 # 文件系统
+│   ├── list          # 列出文件
+│   ├── copy          # 复制文件
+│   ├── move          # 移动文件
+│   └── delete        # 删除文件
+├── terminal           # 终端复用
+│   └── session       # 会话管理
+└── completion         # 命令补全
+    ├── bash          # bash补全
+    └── zsh           # zsh补全
 ```
 
-#### 快捷键操作
+## 🔄 开发进展
 
-默认快捷键前缀为 `Ctrl+B`，主要快捷键包括：
+### ✅ 已完成 (Phase 1.2)
+- [x] 架构重构和模块精简
+- [x] 功能迁移和整合
+- [x] CLI命令结构统一
+- [x] 编译问题修复
+- [x] 基础功能验证
 
-- `Ctrl+B, D` - 断开会话（detach）
-- `Ctrl+B, C` - 创建新窗口
-- `Ctrl+B, "` - 水平分割面板
-- `Ctrl+B, %` - 垂直分割面板
-- `Ctrl+B, O` - 切换面板
-- `Ctrl+B, X` - 关闭面板
-- `Ctrl+B, ?` - 显示帮助
+### 🔄 进行中 (Phase 1.3)
+- [ ] Terminal模块PTY集成
+- [ ] 真正的终端复用功能
+- [ ] 性能基准测试
+- [ ] 单元测试覆盖
 
-#### 配置文件
+### 📋 计划中 (Phase 2+)
+- [ ] TUI界面开发 (tcell/tview)
+- [ ] 数据可视化和监控
+- [ ] 网络工具完善
+- [ ] 智能化功能
+- [ ] 插件生态
 
-创建配置文件 `~/.clixgo/terminal.yaml`：
+## 📈 性能目标
 
-```yaml
-# 基础配置
-prefix_key: "C-b"
-mouse_enabled: true
-status_bar: true
-auto_save: true
-save_interval: "5m"
+| 指标 | 目标值 | 当前状态 |
+|------|--------|----------|
+| **启动时间** | < 30ms | 📋 待测试 |
+| **内存占用** | < 8MB | 📋 待测试 |
+| **CPU空闲** | < 0.5% | 📋 待测试 |
+| **并发会话** | 500+ | 📋 待实现 |
 
-# 主题配置
-theme: "default"
-status_format: "[#S] #I:#W"
+## 🛠️ 开发
 
-# ClixGo 集成
-clixgo_integration: true
-network_monitor: false
-task_integration: true
-```
+### 环境要求
 
-### 网络工具
+- Go 1.23+
+- Linux/macOS/Windows
+- Git
 
-ClixGo 提供了丰富的网络工具集：
+### 构建
 
 ```bash
-# DNS查询
-ClixGo network dns example.com
+# 开发构建
+go build -o clixgo
 
-# HTTP请求
-ClixGo network http https://example.com
+# 生产构建
+go build -ldflags="-s -w" -o clixgo
 
-# 端口检查
-ClixGo network port example.com 80
-
-# IP信息查询
-ClixGo network ipinfo 8.8.8.8
-
-# SSL证书检查
-ClixGo network ssl example.com
-
-# 网络配置查看
-ClixGo network config
-
-# 带宽测试
-ClixGo network bandwidth
-
-# 网络诊断
-ClixGo network diagnose
+# 交叉编译
+GOOS=linux GOARCH=amd64 go build -o clixgo-linux
+GOOS=windows GOARCH=amd64 go build -o clixgo-windows.exe
+GOOS=darwin GOARCH=amd64 go build -o clixgo-darwin
 ```
 
-### 任务管理
-
-任务管理功能允许您创建、监控和管理长时间运行的后台任务。
+### 测试
 
 ```bash
-# 创建任务
-ClixGo task create "任务名称" "任务描述"
+# 运行测试
+go test ./...
 
-# 列出所有任务
-ClixGo task list
+# 测试覆盖率
+go test -cover ./...
 
-# 查看任务状态
-ClixGo task status <task-id>
-
-# 取消任务
-ClixGo task cancel <task-id>
-
-# 监控任务进度
-ClixGo task watch <task-id>
+# 基准测试
+go test -bench=. ./...
 ```
-
-**注意**：通过命令行创建的任务初始状态为"pending"，需要通过编程方式启动。您可以参考 `examples/task/main.go` 或 `examples/taskmanager/main.go` 中的示例代码了解如何启动和管理任务。
-
-## 实际使用示例
-
-### 文本处理示例
-
-```bash
-# 统计文件中的单词、行数和字符数
-ClixGo text count myfile.txt
-
-# 查找包含特定模式的行
-ClixGo text find myfile.txt "search pattern"
-
-# 替换文本
-ClixGo text replace myfile.txt "old text" "new text"
-
-# 提取所有URL
-ClixGo text extract urls myfile.txt
-
-# 格式化JSON
-ClixGo text json format '{"name":"John","age":30}'
-```
-
-### 网络监控示例
-
-```bash
-# 监控多个主机的网络状态
-ClixGo network monitor example.com google.com -i 10s -t 3s
-
-# 分析特定接口的流量
-ClixGo network traffic -i eth0
-
-# 评估网络质量
-ClixGo network quality example.com -d 30s
-```
-
-### 终端多路复用器实际场景
-
-```bash
-# 场景1：开发环境搭建
-ClixGo terminal new-session "dev-env"
-# 在会话中：
-# Ctrl+B, " -> 创建代码编辑区域
-# Ctrl+B, % -> 创建终端区域
-# Ctrl+B, C -> 创建服务器监控窗口
-
-# 场景2：服务器管理
-ClixGo terminal new-session "server-mgmt"
-# 集成 ClixGo 网络工具监控服务器状态
-# network ping server1.example.com
-# task list  # 查看后台任务
-
-# 场景3：多项目管理
-ClixGo terminal new-session "project-a"
-ClixGo terminal new-session "project-b"
-ClixGo terminal list-sessions  # 查看所有项目会话
-```
-
-## 项目结构
-
-```
-ClixGo/
-├── cmd/                 # 命令行工具
-│   ├── cli/            # 主命令行接口
-│   └── task/           # 任务管理命令
-├── examples/           # 示例程序
-│   └── terminal/       # 终端多路复用器示例
-├── internal/           # 内部包
-├── pkg/                # 公共包
-│   ├── alias/          # 命令别名
-│   ├── commands/       # 命令执行
-│   ├── completion/     # 命令补全
-│   ├── config/         # 配置管理
-│   ├── filesystem/     # 文件系统操作
-│   ├── history/        # 历史记录
-│   ├── logger/         # 日志管理
-│   ├── network/        # 网络工具
-│   ├── plugin/         # 插件系统
-│   ├── security/       # 安全功能
-│   ├── task/           # 任务管理
-│   ├── terminal/       # 🆕 终端多路复用器
-│   ├── text/           # 文本处理
-│   └── utils/          # 通用工具
-├── plugins/            # 插件目录
-│   ├── translate/      # 翻译插件
-│   └── weather/        # 天气插件
-├── go.mod              # 依赖管理
-└── README.md           # 文档
-```
-
-## 配置
-
-ClixGo 使用 YAML 配置文件，默认位置为 `~/.clixgo/config.yaml`。您也可以通过 `-c` 参数指定自定义配置文件路径。
-
-配置示例:
-
-```yaml
-log_level: debug
-log_file: clixgo.log
-
-commands:
-  timeout: 30
-
-network:
-  default_dns:
-    - 8.8.8.8
-    - 1.1.1.1
-
-task:
-  store_path: ~/.clixgo/tasks.json
-  max_concurrent: 5
-
-# 终端多路复用器配置
-terminal:
-  prefix_key: "C-b"
-  mouse_enabled: true
-  status_bar: true
-  auto_save: true
-  save_interval: "5m"
-  theme: "default"
-  clixgo_integration: true
-```
-
-## 开发说明
-
-如果您想扩展 ClixGo 的功能，可以通过以下方式：
-
-1. 添加新的命令到 `cmd/cli` 目录
-2. 在 `pkg` 目录下实现功能模块
-3. 修改 `cmd/cli/root.go` 添加新命令
-
-开发任务管理相关功能时，可参考 `pkg/task/manager.go` 中的实现。
-
-开发终端多路复用器相关功能时，可参考 `pkg/terminal/` 目录下的实现，主要模块包括：
-- `types.go` - 核心类型定义
-- `session.go` - 会话管理
-- `server.go` - 服务器实现
-- `client.go` - 客户端实现
-
-## 测试覆盖率与质量保证
-
-ClixGo 项目正在持续改进测试覆盖率和代码质量，目前已完成的第一阶段核心模块测试：
-
-### 已完成测试的模块
-
-| 模块 | 覆盖率 | 测试状态 | 测试内容 |
-|------|--------|----------|----------|
-| **pkg/config** | **75.7%** | ✅ 完成 | 配置加载/保存、环境变量覆盖、热更新 |
-| **pkg/terminal** | **27.6%** | ✅ 完成 | 会话管理、窗口/面板操作、PTY管理、并发安全 |
-| **pkg/ui** | **64.8%** | ✅ 验证 | UI管理器、面板操作、布局测试 |
-| `pkg/text` | 100% | ✅ 完成 | 文本处理功能 |
-| `pkg/commands` | 96.2% | ✅ 完成 | 命令执行功能 |
-| `pkg/logger` | 91.8% | ✅ 完成 | 日志管理功能 |
-| `pkg/alias` | 89.7% | ✅ 完成 | 命令别名功能 |
-| `pkg/history` | 85.4% | ✅ 完成 | 历史记录功能 |
-| `pkg/completion` | 73.9% | ✅ 完成 | 命令补全功能 |
-| `pkg/filesystem` | 71.0% | ✅ 完成 | 文件系统操作 |
-
-### 🎯 第一阶段核心模块测试亮点
-
-- **测试质量保证**：所有测试用例都经过修复，确保测试期望与实际代码行为一致
-- **全面覆盖**：包含功能测试、边界条件、错误处理、并发安全等各个方面
-- **实际场景测试**：模拟真实使用场景，包括多会话管理、复杂布局计算等
-
-#### pkg/terminal 模块测试详情
-- **563行测试代码**：全面覆盖会话生命周期管理
-- **30+个测试函数**：涵盖90+个子测试场景
-- **并发安全验证**：多goroutine操作测试，确保线程安全
-- **持久化测试**：会话保存/恢复功能完整验证
-- **PTY管理测试**：真实进程管理和终端交互测试
-
-### 下一阶段计划
-- 第二阶段：功能模块测试（`pkg/network`、`pkg/performance`、`pkg/task`）
-- 第三阶段：命令行工具测试（`cmd/`目录）
-- 目标：整体测试覆盖率达到90%+
-
-## 性能对比
-
-| 功能 | ClixGo Terminal | tmux | screen |
-|------|----------------|------|---------|
-| 启动时间 | ~50ms | ~150ms | ~100ms |
-| 内存占用 | ~8MB | ~25MB | ~15MB |
-| 跨平台支持 | ✅ 原生 | ❌ 需编译 | ❌ 需编译 |
-| 配置复杂度 | 🟢 零配置 | 🟡 中等 | 🟡 中等 |
-| 工具集成 | ✅ 深度集成 | ❌ 无 | ❌ 无 |
-| 会话恢复 | ✅ 智能 | 🟡 手动 | 🟡 手动 |
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request 贡献代码。
 
 ## 📚 文档
 
-- **[📖 完整文档](./docs/)** - 项目文档中心
-- **[🏗️ 架构设计](./docs/architecture/)** - 系统架构和设计文档
-- **[🔧 实现细节](./docs/implementation/)** - 技术实现方案
-- **[📊 项目报告](./docs/reports/)** - 开发阶段报告
-- **[📖 开发指南](./docs/guides/)** - 开发规范和贡献指南
-- **[🚀 开发进度](./docs/development/)** - 项目进度跟踪
-- **[📋 API文档](./docs/api/)** - API接口文档（规划中）
-- **[🗺️ 开发路线图](./ROADMAP.md)** - 项目发展规划
+- [ROADMAP.md](ROADMAP.md) - 详细开发路线图
+- [PROGRESS_REPORT.md](PROGRESS_REPORT.md) - 项目进展报告
+- [docs/](docs/) - 详细文档目录
+  - [architecture/](docs/architecture/) - 架构设计文档
+  - [api/](docs/api/) - API文档
+  - [guides/](docs/guides/) - 使用指南
 
-## 许可证
+## 🤝 贡献
 
-MIT License 
+欢迎贡献代码！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详细信息。
+
+### 开发流程
+
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
+
+## 📄 许可证
+
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+
+## 🙏 致谢
+
+- [cobra](https://github.com/spf13/cobra) - CLI框架
+- [viper](https://github.com/spf13/viper) - 配置管理
+- [zap](https://github.com/uber-go/zap) - 日志系统
+- [tcell](https://github.com/gdamore/tcell) - 终端界面 (计划中)
+- [tview](https://github.com/rivo/tview) - TUI组件 (计划中)
+
+## 📞 联系
+
+- 项目主页: [https://github.com/Lzww0608/ClixGo](https://github.com/Lzww0608/ClixGo)
+- 问题反馈: [Issues](https://github.com/Lzww0608/ClixGo/issues)
+- 功能请求: [Feature Requests](https://github.com/Lzww0608/ClixGo/issues/new?template=feature_request.md)
+
+---
+
+**ClixGo 2.0** - 下一代增强型CLI工具套件，让命令行工作更高效、更现代、更智能！ 

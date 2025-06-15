@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-1 22:06:37
+* @LastEditTime: 2025-6-15 21:26:47
 * @Description: 命令执行的核心实现，提供串行、并行、管道等执行方式
  */
 
@@ -16,10 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Lzww0608/ClixGo/pkg/alias"
 	"github.com/Lzww0608/ClixGo/pkg/errors"
-	"github.com/Lzww0608/ClixGo/pkg/history"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
+	"github.com/Lzww0608/ClixGo/pkg/terminal"
 	"github.com/Lzww0608/ClixGo/pkg/utils"
 	"go.uber.org/zap"
 )
@@ -35,7 +34,7 @@ func ExecuteCommand(command string) error {
 	}
 
 	// 扩展别名
-	expandedCommand := alias.ExpandCommand(command)
+	expandedCommand := ExpandCommand(command)
 	if expandedCommand != command {
 		logger.Info("扩展别名",
 			zap.String("original", command),
@@ -44,7 +43,7 @@ func ExecuteCommand(command string) error {
 	}
 
 	startTime := time.Now()
-	cmdHistory := &history.CommandHistory{
+	cmdHistory := &terminal.CommandHistory{
 		Command:   command,
 		StartTime: startTime,
 	}
@@ -54,7 +53,7 @@ func ExecuteCommand(command string) error {
 		cmdHistory.Status = "failed"
 		cmdHistory.EndTime = time.Now()
 		cmdHistory.Duration = cmdHistory.EndTime.Sub(startTime).String()
-		history.SaveHistory(cmdHistory)
+		terminal.SaveHistory(cmdHistory)
 		return errors.New(errors.ErrCodeInvalidParam, "空命令").WithDetails("command contains no executable parts")
 	}
 
@@ -77,7 +76,7 @@ func ExecuteCommand(command string) error {
 			zap.String("output", string(output)))
 
 		// 保存历史记录
-		if histErr := history.SaveHistory(cmdHistory); histErr != nil {
+		if histErr := terminal.SaveHistory(cmdHistory); histErr != nil {
 			logger.Error("保存命令历史失败", zap.Error(histErr))
 		}
 
@@ -90,7 +89,7 @@ func ExecuteCommand(command string) error {
 		zap.String("command", command),
 		zap.String("output", string(output)))
 
-	if err := history.SaveHistory(cmdHistory); err != nil {
+	if err := terminal.SaveHistory(cmdHistory); err != nil {
 		logger.Error("保存命令历史失败", zap.Error(err))
 	}
 

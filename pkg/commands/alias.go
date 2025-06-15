@@ -1,12 +1,12 @@
 /*
 * @Author: Lzww0608
-* @Date: 2025-05-29 10:00:00
+* @Date: 2025-06-14 11:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-1 22:07:08
-* @Description: 命令别名管理功能的核心实现
+* @LastEditTime: 2025-06-14 11:00:00
+* @Description: 命令别名管理功能 (从pkg/alias迁移)
  */
 
-package alias
+package commands
 
 import (
 	"encoding/json"

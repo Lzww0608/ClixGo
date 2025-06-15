@@ -1,12 +1,12 @@
 /*
 * @Author: Lzww0608
-* @Date: 2025-05-29 10:00:00
+* @Date: 2025-06-14 11:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
-* @Description: 命令自动补全功能的实现
+* @LastEditTime: 2025-06-14 11:00:00
+* @Description: 命令自动补全功能 (从pkg/completion迁移)
  */
 
-package completion
+package commands
 
 import (
 	"os"
@@ -29,7 +29,7 @@ func GenerateCompletionScript(cmd *cobra.Command) error {
 	// 生成bash补全脚本
 	bashScript := `#!/bin/bash
 
-_gocli_completion() {
+_clixgo_completion() {
     local cur prev words cword
     _init_completion || return
 
@@ -50,18 +50,18 @@ _gocli_completion() {
 
     # 获取所有子命令
     local subcommands
-    subcommands=$(gocli --help 2>&1 | awk '/^  [a-z]/ {print $1}')
+    subcommands=$(clixgo --help 2>&1 | awk '/^  [a-z]/ {print $1}')
     
     # 添加别名到补全列表
     local aliases=""
-    for name in $(gocli alias list 2>/dev/null | awk '{print $1}'); do
+    for name in $(clixgo alias list 2>/dev/null | awk '{print $1}'); do
         aliases="$aliases $name"
     done
 
     COMPREPLY=($(compgen -W "${subcommands} ${aliases}" -- "${cur}"))
 }
 
-complete -F _gocli_completion gocli
+complete -F _clixgo_completion clixgo
 `
 
 	// 获取用户主目录
@@ -77,14 +77,14 @@ complete -F _gocli_completion gocli
 	}
 
 	// 写入补全脚本
-	completionFile := filepath.Join(completionDir, "gocli")
+	completionFile := filepath.Join(completionDir, "clixgo")
 	if err := writeFileFunc(completionFile, []byte(bashScript), 0644); err != nil {
 		return err
 	}
 
 	// 确保.bashrc中包含补全脚本
 	bashrc := filepath.Join(homeDir, ".bashrc")
-	completionLine := `source ~/.bash_completion.d/gocli`
+	completionLine := `source ~/.bash_completion.d/clixgo`
 
 	// 检查是否已经包含补全脚本
 	data, err := readFileFunc(bashrc)

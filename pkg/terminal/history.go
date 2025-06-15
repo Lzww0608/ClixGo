@@ -1,12 +1,12 @@
 /*
 * @Author: Lzww0608
-* @Date: 2025-05-29 10:00:00
+* @Date: 2025-06-14 11:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
-* @Description: 命令历史记录管理功能的核心实现
+* @LastEditTime: 2025-06-14 11:00:00
+* @Description: 命令历史记录管理功能 (从pkg/history迁移到terminal)
  */
 
-package history
+package terminal
 
 import (
 	"encoding/json"
@@ -27,27 +27,27 @@ type CommandHistory struct {
 }
 
 var (
-	historyFile = filepath.Join(os.Getenv("HOME"), ".clixgo", "history.json")
-	mutex       = &sync.Mutex{} // 添加互斥锁以保护文件访问
+	historyFile  = filepath.Join(os.Getenv("HOME"), ".clixgo", "history.json")
+	historyMutex = &sync.Mutex{} // 添加互斥锁以保护文件访问
 )
 
 // SetHistoryFilePath 允许自定义历史文件的路径
 func SetHistoryFilePath(path string) {
-	mutex.Lock()
-	defer mutex.Unlock()
+	historyMutex.Lock()
+	defer historyMutex.Unlock()
 	historyFile = path
 }
 
 // GetHistoryFilePath 返回当前历史文件的路径
 func GetHistoryFilePath() string {
-	mutex.Lock()
-	defer mutex.Unlock()
+	historyMutex.Lock()
+	defer historyMutex.Unlock()
 	return historyFile
 }
 
 func SaveHistory(cmd *CommandHistory) error {
-	mutex.Lock()
-	defer mutex.Unlock()
+	historyMutex.Lock()
+	defer historyMutex.Unlock()
 
 	// 确保目录存在
 	if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
@@ -88,8 +88,8 @@ func SaveHistory(cmd *CommandHistory) error {
 }
 
 func GetHistory() ([]CommandHistory, error) {
-	mutex.Lock()
-	defer mutex.Unlock()
+	historyMutex.Lock()
+	defer historyMutex.Unlock()
 
 	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
 		return []CommandHistory{}, nil
@@ -123,8 +123,8 @@ func GetLastHistory() (*CommandHistory, error) {
 }
 
 func ClearHistory() error {
-	mutex.Lock()
-	defer mutex.Unlock()
+	historyMutex.Lock()
+	defer historyMutex.Unlock()
 
 	if err := os.Remove(historyFile); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("清除历史记录失败: %v", err)
