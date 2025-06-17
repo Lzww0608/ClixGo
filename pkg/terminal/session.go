@@ -11,7 +11,9 @@ package terminal
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -306,6 +308,13 @@ func (sessionManager *SessionManager) GetLeakDetector() *performance.MemoryLeakD
 	return sessionManager.leakDetector
 }
 
+// AddSessionDirect 直接添加会话到管理器 (仅用于测试)
+func (sessionManager *SessionManager) AddSessionDirect(session *Session) {
+	sessionManager.sessions[session.ID] = session
+	sessionManager.performanceStats.CreatedSessions++
+	sessionManager.performanceStats.ActiveSessions++
+}
+
 // OptimizePerformance 性能优化方法
 func (sessionManager *SessionManager) OptimizePerformance() error {
 	// 触发GC优化
@@ -345,7 +354,7 @@ func (sessionManager *SessionManager) Shutdown() error {
 
 	// 关闭协程池
 	if sessionManager.goroutinePool != nil {
-		sessionManager.goroutinePool.StopWithTimeout(10 * time.Second)
+		sessionManager.goroutinePool.StopWithTimeout(3 * time.Second) // 优化：从10秒减少到3秒
 	}
 
 	// 清理对象池
@@ -979,40 +988,55 @@ func (sessionManager *SessionManager) recalculateLayout(window *Window) {
 		return
 	}
 
-	// 假设终端大小为 80x24（这应该从实际终端获取）
-	termWidth, termHeight := 80, 24
+	// 获取终端大小
+	width, height := sessionManager.getTerminalSize()
 
 	switch window.Layout {
 	case LayoutEven:
-		sessionManager.layoutEven(window.Panes, termWidth, termHeight)
+		sessionManager.layoutEvenOptimized(window.Panes, width, height)
 	case LayoutMainVertical:
-		sessionManager.layoutMainVertical(window.Panes, termWidth, termHeight)
+		sessionManager.layoutMainVerticalOptimized(window.Panes, width, height)
 	case LayoutMainHorizontal:
-		sessionManager.layoutMainHorizontal(window.Panes, termWidth, termHeight)
+		sessionManager.layoutMainHorizontalOptimized(window.Panes, width, height)
 	case LayoutTiled:
-		sessionManager.layoutTiled(window.Panes, termWidth, termHeight)
+		sessionManager.layoutTiledOptimized(window.Panes, width, height)
 	default:
-		sessionManager.layoutEven(window.Panes, termWidth, termHeight)
+		sessionManager.layoutEvenOptimized(window.Panes, width, height)
 	}
 }
 
-// layoutEven 均匀布局
-func (sessionManager *SessionManager) layoutEven(panes []*Pane, width, height int) {
+// layoutEvenOptimized 优化的均匀布局
+//
+// 改进版本：更好地处理剩余空间分配
+func (sessionManager *SessionManager) layoutEvenOptimized(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
 
 	paneWidth := width / len(panes)
+	remainder := width % len(panes)
+
 	for i, pane := range panes {
 		pane.X = i * paneWidth
 		pane.Y = 0
 		pane.Width = paneWidth
 		pane.Height = height
+
+		// 将剩余空间分配给前几个面板
+		if i < remainder {
+			pane.Width++
+			// 调整后续面板的X坐标
+			for j := i + 1; j < len(panes); j++ {
+				panes[j].X++
+			}
+		}
 	}
 }
 
-// layoutMainVertical 主垂直布局
-func (sessionManager *SessionManager) layoutMainVertical(panes []*Pane, width, height int) {
+// layoutMainVerticalOptimized 优化的主垂直布局
+//
+// 改进版本：更精确的空间分配和边界处理
+func (sessionManager *SessionManager) layoutMainVerticalOptimized(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
@@ -1025,9 +1049,16 @@ func (sessionManager *SessionManager) layoutMainVertical(panes []*Pane, width, h
 		return
 	}
 
-	mainWidth := width * 2 / 3
+	// 更智能的主面板大小计算
+	mainWidth := int(float64(width) * 0.618) // 黄金比例
+	if mainWidth < width/3 {
+		mainWidth = width / 2 // 最小50%
+	}
 	sideWidth := width - mainWidth
-	sideHeight := height / (len(panes) - 1)
+
+	sideCount := len(panes) - 1
+	sideHeight := height / sideCount
+	sideRemainder := height % sideCount
 
 	// 主面板
 	panes[0].X = 0
@@ -1036,16 +1067,26 @@ func (sessionManager *SessionManager) layoutMainVertical(panes []*Pane, width, h
 	panes[0].Height = height
 
 	// 侧面板
+	currentY := 0
 	for i := 1; i < len(panes); i++ {
 		panes[i].X = mainWidth
-		panes[i].Y = (i - 1) * sideHeight
+		panes[i].Y = currentY
 		panes[i].Width = sideWidth
 		panes[i].Height = sideHeight
+
+		// 将剩余高度分配给前几个侧面板
+		if i-1 < sideRemainder {
+			panes[i].Height++
+		}
+
+		currentY += panes[i].Height
 	}
 }
 
-// layoutMainHorizontal 主水平布局
-func (sessionManager *SessionManager) layoutMainHorizontal(panes []*Pane, width, height int) {
+// layoutMainHorizontalOptimized 优化的主水平布局
+//
+// 改进版本：更精确的空间分配和边界处理
+func (sessionManager *SessionManager) layoutMainHorizontalOptimized(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
@@ -1058,9 +1099,16 @@ func (sessionManager *SessionManager) layoutMainHorizontal(panes []*Pane, width,
 		return
 	}
 
-	mainHeight := height * 2 / 3
+	// 更智能的主面板大小计算
+	mainHeight := int(float64(height) * 0.618) // 黄金比例
+	if mainHeight < height/3 {
+		mainHeight = height / 2 // 最小50%
+	}
 	sideHeight := height - mainHeight
-	sideWidth := width / (len(panes) - 1)
+
+	sideCount := len(panes) - 1
+	sideWidth := width / sideCount
+	sideRemainder := width % sideCount
 
 	// 主面板
 	panes[0].X = 0
@@ -1069,41 +1117,127 @@ func (sessionManager *SessionManager) layoutMainHorizontal(panes []*Pane, width,
 	panes[0].Height = mainHeight
 
 	// 侧面板
+	currentX := 0
 	for i := 1; i < len(panes); i++ {
-		panes[i].X = (i - 1) * sideWidth
+		panes[i].X = currentX
 		panes[i].Y = mainHeight
 		panes[i].Width = sideWidth
 		panes[i].Height = sideHeight
+
+		// 将剩余宽度分配给前几个侧面板
+		if i-1 < sideRemainder {
+			panes[i].Width++
+		}
+
+		currentX += panes[i].Width
 	}
 }
 
-// layoutTiled 平铺布局
-func (sessionManager *SessionManager) layoutTiled(panes []*Pane, width, height int) {
+// layoutTiledOptimized 优化的平铺布局
+//
+// 改进版本：更智能的行列计算和空间利用
+func (sessionManager *SessionManager) layoutTiledOptimized(panes []*Pane, width, height int) {
 	if len(panes) == 0 {
 		return
 	}
 
-	cols := 1
-	rows := len(panes)
+	paneCount := len(panes)
 
-	// 计算最佳的行列数
-	for cols*cols < len(panes) {
-		cols++
+	// 计算最优的行列数
+	cols := int(math.Ceil(math.Sqrt(float64(paneCount))))
+	rows := int(math.Ceil(float64(paneCount) / float64(cols)))
+
+	// 优化行列比例，使其更接近终端的宽高比
+	terminalRatio := float64(width) / float64(height)
+	layoutRatio := float64(cols) / float64(rows)
+
+	// 如果布局比例与终端比例差异太大，调整行列数
+	if math.Abs(layoutRatio-terminalRatio) > 0.5 {
+		if layoutRatio > terminalRatio {
+			// 布局太宽，增加行数
+			rows++
+			cols = int(math.Ceil(float64(paneCount) / float64(rows)))
+		} else {
+			// 布局太高，增加列数
+			cols++
+			rows = int(math.Ceil(float64(paneCount) / float64(cols)))
+		}
 	}
-	rows = (len(panes) + cols - 1) / cols
 
-	paneWidth := width / cols
-	paneHeight := height / rows
+	basePaneWidth := width / cols
+	basePaneHeight := height / rows
+	widthRemainder := width % cols
+	heightRemainder := height % rows
 
 	for i, pane := range panes {
 		col := i % cols
 		row := i / cols
 
-		pane.X = col * paneWidth
-		pane.Y = row * paneHeight
-		pane.Width = paneWidth
-		pane.Height = paneHeight
+		pane.Width = basePaneWidth
+		pane.Height = basePaneHeight
+
+		// 分配剩余宽度
+		if col < widthRemainder {
+			pane.Width++
+		}
+
+		// 分配剩余高度
+		if row < heightRemainder {
+			pane.Height++
+		}
+
+		// 计算位置
+		pane.X = 0
+		for c := 0; c < col; c++ {
+			extraWidth := 0
+			if c < widthRemainder {
+				extraWidth = 1
+			}
+			pane.X += basePaneWidth + extraWidth
+		}
+
+		pane.Y = 0
+		for r := 0; r < row; r++ {
+			extraHeight := 0
+			if r < heightRemainder {
+				extraHeight = 1
+			}
+			pane.Y += basePaneHeight + extraHeight
+		}
 	}
+}
+
+// getTerminalSize 获取终端大小
+//
+// 该函数尝试从多个来源获取实际的终端大小
+//
+// 返回:
+//   - width: 终端宽度
+//   - height: 终端高度
+func (sessionManager *SessionManager) getTerminalSize() (int, int) {
+	// 尝试从环境变量获取
+	if cols := os.Getenv("COLUMNS"); cols != "" {
+		if rows := os.Getenv("LINES"); rows != "" {
+			if width, err := strconv.Atoi(cols); err == nil {
+				if height, err := strconv.Atoi(rows); err == nil && width > 0 && height > 0 {
+					return width, height
+				}
+			}
+		}
+	}
+
+	// 使用配置中的默认值或硬编码默认值
+	if sessionManager.config != nil {
+		if sessionManager.config.BufferSize > 0 {
+			// 基于缓冲区大小估算合理的终端大小
+			width := 120 // 现代终端的常见宽度
+			height := 30 // 现代终端的常见高度
+			return width, height
+		}
+	}
+
+	// 最后的默认值
+	return 80, 24
 }
 
 // RenameSession 重命名会话
@@ -1548,4 +1682,296 @@ func (sessionManager *SessionManager) buildSession(name string) (*Session, error
 		zap.Time("created_at", newSession.CreatedAt))
 
 	return newSession, nil
+}
+
+// ResizePane 调整面板大小
+//
+// 该函数提供面板大小调整功能，支持增加或减少面板的宽度和高度
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//   - windowIndex: 窗口索引
+//   - paneIndex: 面板索引
+//   - direction: 调整方向 ("up", "down", "left", "right")
+//   - amount: 调整量（正数增加，负数减少）
+//
+// 返回:
+//   - error: 调整过程中的错误，nil表示成功
+func (sessionManager *SessionManager) ResizePane(sessionID string, windowIndex, paneIndex int, direction string, amount int) error {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	if windowIndex < 0 || windowIndex >= len(session.Windows) {
+		return fmt.Errorf("窗口索引超出范围: %d", windowIndex)
+	}
+
+	window := session.Windows[windowIndex]
+
+	window.mutex.Lock()
+	defer window.mutex.Unlock()
+
+	if paneIndex < 0 || paneIndex >= len(window.Panes) {
+		return fmt.Errorf("面板索引超出范围: %d", paneIndex)
+	}
+
+	pane := window.Panes[paneIndex]
+
+	// 根据方向调整面板大小
+	switch direction {
+	case "up":
+		if pane.Height+amount > 0 {
+			pane.Height += amount
+			pane.Y -= amount
+		}
+	case "down":
+		if pane.Height+amount > 0 {
+			pane.Height += amount
+		}
+	case "left":
+		if pane.Width+amount > 0 {
+			pane.Width += amount
+			pane.X -= amount
+		}
+	case "right":
+		if pane.Width+amount > 0 {
+			pane.Width += amount
+		}
+	default:
+		return fmt.Errorf("无效的调整方向: %s", direction)
+	}
+
+	// 重新计算布局以确保一致性
+	sessionManager.recalculateLayout(window)
+
+	session.LastActive = utils.Times.Now()
+
+	logger.Debug("面板大小调整完成",
+		zap.String("session_id", sessionID),
+		zap.Int("window_index", windowIndex),
+		zap.Int("pane_index", paneIndex),
+		zap.String("direction", direction),
+		zap.Int("amount", amount))
+
+	return nil
+}
+
+// NextWindow 切换到下一个窗口
+//
+// 该函数提供窗口导航功能，循环切换到下一个窗口
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//
+// 返回:
+//   - error: 切换过程中的错误，nil表示成功
+func (sessionManager *SessionManager) NextWindow(sessionID string) error {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+
+	if len(session.Windows) <= 1 {
+		return nil // 只有一个或没有窗口时无需切换
+	}
+
+	nextIndex := (session.ActiveWindow + 1) % len(session.Windows)
+	session.ActiveWindow = nextIndex
+	session.LastActive = utils.Times.Now()
+
+	logger.Debug("切换到下一个窗口",
+		zap.String("session_id", sessionID),
+		zap.Int("window_index", nextIndex))
+
+	return nil
+}
+
+// PreviousWindow 切换到上一个窗口
+//
+// 该函数提供窗口导航功能，循环切换到上一个窗口
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//
+// 返回:
+//   - error: 切换过程中的错误，nil表示成功
+func (sessionManager *SessionManager) PreviousWindow(sessionID string) error {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+
+	if len(session.Windows) <= 1 {
+		return nil // 只有一个或没有窗口时无需切换
+	}
+
+	prevIndex := session.ActiveWindow - 1
+	if prevIndex < 0 {
+		prevIndex = len(session.Windows) - 1
+	}
+
+	session.ActiveWindow = prevIndex
+	session.LastActive = utils.Times.Now()
+
+	logger.Debug("切换到上一个窗口",
+		zap.String("session_id", sessionID),
+		zap.Int("window_index", prevIndex))
+
+	return nil
+}
+
+// SetLayout 设置窗口布局
+//
+// 该函数允许动态更改窗口的面板布局方式
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//   - windowIndex: 窗口索引
+//   - layout: 新的布局类型
+//
+// 返回:
+//   - error: 设置过程中的错误，nil表示成功
+func (sessionManager *SessionManager) SetLayout(sessionID string, windowIndex int, layout Layout) error {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	if windowIndex < 0 || windowIndex >= len(session.Windows) {
+		return fmt.Errorf("窗口索引超出范围: %d", windowIndex)
+	}
+
+	window := session.Windows[windowIndex]
+
+	// 验证布局类型
+	switch layout {
+	case LayoutMainVertical, LayoutMainHorizontal, LayoutEven, LayoutTiled:
+		// 有效的布局类型
+	default:
+		return fmt.Errorf("无效的布局类型: %s", layout)
+	}
+
+	window.mutex.Lock()
+	defer window.mutex.Unlock()
+
+	window.Layout = layout
+	sessionManager.recalculateLayout(window)
+
+	session.LastActive = utils.Times.Now()
+
+	logger.Info("窗口布局已更新",
+		zap.String("session_id", sessionID),
+		zap.Int("window_index", windowIndex),
+		zap.String("layout", string(layout)))
+
+	return nil
+}
+
+// NextPane 切换到下一个面板
+//
+// 该函数提供面板导航功能，循环切换到下一个面板
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//   - windowIndex: 窗口索引
+//
+// 返回:
+//   - error: 切换过程中的错误，nil表示成功
+func (sessionManager *SessionManager) NextPane(sessionID string, windowIndex int) error {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	if windowIndex < 0 || windowIndex >= len(session.Windows) {
+		return fmt.Errorf("窗口索引超出范围: %d", windowIndex)
+	}
+
+	window := session.Windows[windowIndex]
+
+	window.mutex.Lock()
+	defer window.mutex.Unlock()
+
+	if len(window.Panes) <= 1 {
+		return nil // 只有一个或没有面板时无需切换
+	}
+
+	// 设置所有面板为非活动
+	for _, pane := range window.Panes {
+		pane.Active = false
+	}
+
+	// 切换到下一个面板
+	nextIndex := (window.ActivePane + 1) % len(window.Panes)
+	window.ActivePane = nextIndex
+	window.Panes[nextIndex].Active = true
+
+	session.LastActive = utils.Times.Now()
+
+	logger.Debug("切换到下一个面板",
+		zap.String("session_id", sessionID),
+		zap.Int("window_index", windowIndex),
+		zap.Int("pane_index", nextIndex))
+
+	return nil
+}
+
+// PreviousPane 切换到上一个面板
+//
+// 该函数提供面板导航功能，循环切换到上一个面板
+//
+// 参数:
+//   - sessionID: 目标会话ID
+//   - windowIndex: 窗口索引
+//
+// 返回:
+//   - error: 切换过程中的错误，nil表示成功
+func (sessionManager *SessionManager) PreviousPane(sessionID string, windowIndex int) error {
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "获取会话失败")
+	}
+
+	if windowIndex < 0 || windowIndex >= len(session.Windows) {
+		return fmt.Errorf("窗口索引超出范围: %d", windowIndex)
+	}
+
+	window := session.Windows[windowIndex]
+
+	window.mutex.Lock()
+	defer window.mutex.Unlock()
+
+	if len(window.Panes) <= 1 {
+		return nil // 只有一个或没有面板时无需切换
+	}
+
+	// 设置所有面板为非活动
+	for _, pane := range window.Panes {
+		pane.Active = false
+	}
+
+	// 切换到上一个面板
+	prevIndex := window.ActivePane - 1
+	if prevIndex < 0 {
+		prevIndex = len(window.Panes) - 1
+	}
+
+	window.ActivePane = prevIndex
+	window.Panes[prevIndex].Active = true
+
+	session.LastActive = utils.Times.Now()
+
+	logger.Debug("切换到上一个面板",
+		zap.String("session_id", sessionID),
+		zap.Int("window_index", windowIndex),
+		zap.Int("pane_index", prevIndex))
+
+	return nil
 }

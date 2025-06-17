@@ -1,0 +1,19 @@
+{
+  "startup_time_ns": 522259,
+  "memory_usage_bytes": 19000,
+  "session_create_time_ns": 41432,
+  "shutdown_time_ns": 50564255,
+  "goroutine_count": 39,
+  "object_pool_stats": {
+    "avg_create_time_ns": 14551,
+    "buffer_pool_hits": 0,
+    "buffer_pool_misses": 0,
+    "memory_usage_mb": 0
+  },
+  "leak_detector_stats": {
+    "baseline_warmup_s": 60,
+    "check_interval_s": 30,
+    "enabled": true
+  },
+  "timestamp": "2025-06-17T16:48:01.841374058+08:00"
+}
