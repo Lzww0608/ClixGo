@@ -15,29 +15,39 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Lzww0608/ClixGo/pkg/errors"
 	"github.com/Lzww0608/ClixGo/pkg/logger"
 	"github.com/Lzww0608/ClixGo/pkg/performance"
-	"github.com/Lzww0608/ClixGo/pkg/sync"
+	clixsync "github.com/Lzww0608/ClixGo/pkg/sync"
 	"github.com/Lzww0608/ClixGo/pkg/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-// SessionManager 会话管理器 - Phase 1.2 性能优化版
+// SessionManager 会话管理器 - Phase 1.3 优化版 (任务1.9+1.10)
 type SessionManager struct {
 	sessions map[string]*Session
 	config   *TerminalConfig
 
 	// Phase 1.2 性能优化组件
 	objectPool    *performance.ObjectPoolManager  // 对象池管理器
-	goroutinePool *sync.GoroutinePool             // 协程池
+	goroutinePool *clixsync.GoroutinePool         // 协程池
 	leakDetector  *performance.MemoryLeakDetector // 内存泄漏检测器
+
+	// Phase 1.3 新增优化组件 (任务1.9)
+	bufferManager *PTYBufferManager     // PTY缓冲区管理器
+	errorRecovery *ErrorRecoveryManager // 错误恢复管理器
 
 	// 性能统计
 	performanceStats *SessionPerformanceStats
+
+	// 错误处理和恢复 (任务1.10)
+	recoveryConfig RecoveryConfig
+	recoveryStats  RecoveryStats
+	recoveryMutex  sync.RWMutex
 }
 
 // SessionPerformanceStats 会话性能统计
@@ -54,6 +64,46 @@ type SessionPerformanceStats struct {
 	LastOptimization time.Time     `json:"last_optimization"`
 }
 
+// PTYBufferManager 简化的PTY缓冲区管理器
+type PTYBufferManager struct {
+	readBufferPool  sync.Pool
+	writeBufferPool sync.Pool
+	stats           struct {
+		totalReads   uint64
+		totalWrites  uint64
+		bufferHits   uint64
+		bufferMisses uint64
+		mutex        sync.RWMutex
+	}
+}
+
+// ErrorRecoveryManager 简化的错误恢复管理器
+type ErrorRecoveryManager struct {
+	config  RecoveryConfig
+	stats   RecoveryStats
+	mutex   sync.RWMutex
+	running bool
+}
+
+// RecoveryConfig 恢复配置
+type RecoveryConfig struct {
+	MaxRetries          int           `json:"max_retries"`
+	RetryInterval       time.Duration `json:"retry_interval"`
+	EnableAutoRestart   bool          `json:"enable_auto_restart"`
+	EnableResourceClean bool          `json:"enable_resource_clean"`
+	GracefulTimeout     time.Duration `json:"graceful_timeout"`
+}
+
+// RecoveryStats 恢复统计
+type RecoveryStats struct {
+	TotalFailures     uint64    `json:"total_failures"`
+	TotalRecoveries   uint64    `json:"total_recoveries"`
+	SuccessfulRetries uint64    `json:"successful_retries"`
+	FailedRetries     uint64    `json:"failed_retries"`
+	LastFailure       time.Time `json:"last_failure"`
+	LastRecovery      time.Time `json:"last_recovery"`
+}
+
 // NewSessionManager 创建会话管理器 - Phase 1.2 优化版
 func NewSessionManager(config *TerminalConfig) *SessionManager {
 	if config == nil {
@@ -62,7 +112,7 @@ func NewSessionManager(config *TerminalConfig) *SessionManager {
 
 	// 创建性能优化组件
 	objectPool := performance.NewObjectPoolManager(performance.DefaultPoolConfig())
-	goroutinePool := sync.NewGoroutinePool(sync.DefaultGoroutinePoolConfig())
+	goroutinePool := clixsync.NewGoroutinePool(clixsync.DefaultGoroutinePoolConfig())
 
 	// 启动协程池
 	if err := goroutinePool.Start(); err != nil {
@@ -130,7 +180,7 @@ func (sessionManager *SessionManager) CreateSession(name string) (*Session, erro
 	sessionChan := make(chan *Session, 1)
 	errorChan := make(chan error, 1)
 
-	createTask := sync.NewTask("create_session_"+sessionName, func(ctx context.Context) error {
+	createTask := clixsync.NewTask("create_session_"+sessionName, func(ctx context.Context) error {
 		session, err := sessionManager.buildSessionOptimized(sessionName)
 		if err != nil {
 			errorChan <- err
@@ -239,7 +289,7 @@ func (sessionManager *SessionManager) createPaneOptimized(windowID, command stri
 	// 使用协程池创建PTY
 	ptyCreated := make(chan bool, 1)
 
-	createPTYTask := sync.NewTask("create_pty_"+paneID, func(ctx context.Context) error {
+	createPTYTask := clixsync.NewTask("create_pty_"+paneID, func(ctx context.Context) error {
 		// 这里可以集成优化的PTY创建逻辑
 		ptyCreated <- true
 		return nil
@@ -279,7 +329,7 @@ func (sessionManager *SessionManager) processOutputOptimized(pane *Pane, data []
 	copy(processBuf, data)
 
 	// 使用协程池异步处理输出
-	processTask := sync.NewTask("process_output_"+pane.ID, func(ctx context.Context) error {
+	processTask := clixsync.NewTask("process_output_"+pane.ID, func(ctx context.Context) error {
 		// 在这里实现输出处理逻辑
 		// 例如：终端渲染、日志记录、历史保存等
 		return nil
@@ -299,7 +349,7 @@ func (sessionManager *SessionManager) GetObjectPool() *performance.ObjectPoolMan
 }
 
 // GetGoroutinePool 获取协程池
-func (sessionManager *SessionManager) GetGoroutinePool() *sync.GoroutinePool {
+func (sessionManager *SessionManager) GetGoroutinePool() *clixsync.GoroutinePool {
 	return sessionManager.goroutinePool
 }
 
@@ -319,7 +369,7 @@ func (sessionManager *SessionManager) AddSessionDirect(session *Session) {
 func (sessionManager *SessionManager) OptimizePerformance() error {
 	// 触发GC优化
 	go func() {
-		optimizeTask := sync.NewTask("performance_optimize", func(ctx context.Context) error {
+		optimizeTask := clixsync.NewTask("performance_optimize", func(ctx context.Context) error {
 			// 清理对象池
 			sessionManager.objectPool.Reset()
 
