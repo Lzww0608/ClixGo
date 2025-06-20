@@ -167,22 +167,6 @@ touch pkg/terminal/pane/manager.go
 
 ---
 
-## 📞 需要帮助时
 
-### 技术问题
-- 查看 [PHASE_1_3_PLAN.md](PHASE_1_3_PLAN.md) 详细计划
-- 参考 [docs/architecture/](docs/architecture/) 架构文档
-- 查看现有代码实现和测试用例
 
-### 进度问题
-- 每周检查里程碑完成情况
-- 及时调整计划和优先级
-- 记录遇到的问题和解决方案
 
----
-
-**开始时间**: Phase 1.2 完成后立即开始
-**预计完成**: 2-3 周后
-**下一阶段**: Phase 2 TUI 界面开发
-
-让我们开始 Phase 1.3，向着真正的终端复用功能迈进！🚀 

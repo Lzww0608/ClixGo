@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-20 11:06:38
 * @Description: 终端用户界面管理器的实现
  */
 
@@ -489,4 +489,10 @@ func (ui *UIManager) GetActivePanel() string {
 	ui.mutex.RLock()
 	defer ui.mutex.RUnlock()
 	return ui.activePane
+}
+
+// SetCustomInputCapture 设置自定义输入捕获
+func (ui *UIManager) SetCustomInputCapture(capture func(*tcell.EventKey) *tcell.EventKey) {
+	ui.app.SetInputCapture(capture)
+	logger.Debug("设置自定义输入捕获")
 }

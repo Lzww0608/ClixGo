@@ -59,6 +59,7 @@ func init() {
 
 	// 添加子命令
 	rootCmd.AddCommand(NewTerminalCmd())
+	rootCmd.AddCommand(NewTUICmd()) // 新增TUI命令
 	rootCmd.AddCommand(NewAliasCmd())
 	rootCmd.AddCommand(NewHistoryCmd())
 	rootCmd.AddCommand(NewFilesystemCmd())
