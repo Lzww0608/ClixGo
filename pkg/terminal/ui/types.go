@@ -2,41 +2,27 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-05-29 10:00:00
+* @LastEditTime: 2025-6-22 17:04:20
 * @Description: 终端用户界面相关的类型定义
  */
 
 package ui
 
 import (
-	"context"
-	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
-// UIManager 管理终端UI渲染
-type UIManager struct {
-	app        *tview.Application
-	screen     tcell.Screen
-	layout     *Layout
-	statusBar  *StatusBar
-	panels     map[string]*Panel
-	activePane string
-	mutex      sync.RWMutex
-	ctx        context.Context
-	cancel     context.CancelFunc
-	keyBinds   map[tcell.Key]KeyHandler
-	mouseMode  bool
-}
+// UIManager 在manager.go中定义
 
 // Layout 布局管理器
 type Layout struct {
 	root      *tview.Flex
 	mainArea  *tview.Flex
 	statusBar *tview.TextView
+	sidebar   *Sidebar // 添加侧边栏支持
 	mode      LayoutMode
 	panels    []*Panel
 }
@@ -45,10 +31,14 @@ type Layout struct {
 type LayoutMode int
 
 const (
-	LayoutSingle     LayoutMode = iota // 单面板
-	LayoutVertical                     // 垂直分割
-	LayoutHorizontal                   // 水平分割
-	LayoutGrid                         // 网格布局
+	LayoutSingle                LayoutMode = iota // 单面板
+	LayoutVertical                                // 垂直分割
+	LayoutHorizontal                              // 水平分割
+	LayoutGrid                                    // 网格布局
+	LayoutSingleWithSidebar                       // 单面板+侧边栏
+	LayoutVerticalWithSidebar                     // 垂直分割+侧边栏
+	LayoutHorizontalWithSidebar                   // 水平分割+侧边栏
+	LayoutGridWithSidebar                         // 网格布局+侧边栏
 )
 
 // Panel 面板

@@ -285,10 +285,24 @@ pkg/
 - ✅ 信号处理和会话恢复框架
 - ✅ 集成到主CLI命令系统
 
-**Step 3**: 📋 工具侧边栏 (pkg/terminal/ui/sidebar.go)
-- 基于tview.List的工具面板
-- 网络监控、性能统计集成
-- 键盘快捷键绑定
+**Step 3**: 📋 工具侧边栏 (pkg/terminal/ui/sidebar.go) - **进行中**
+- **阶段1**: 创建Sidebar组件
+  - 基于tview.List的工具列表
+  - 定义SidebarTool数据结构
+  - 实现基础渲染和选择逻辑
+- **阶段2**: 集成数据源
+  - 集成SessionPerformanceStats性能数据
+  - 集成RealtimeNetworkMonitor网络数据
+  - 实现数据更新机制和格式化显示
+- **阶段3**: 扩展UIManager布局
+  - 扩展Layout支持侧边栏模式
+  - 修改initLayout支持侧边栏配置
+  - 更新updateLayout处理侧边栏
+  - 添加侧边栏显示/隐藏切换
+- **阶段4**: 键盘绑定集成
+  - 添加侧边栏快捷键 (F2: 显示/隐藏, F3: 工具选择)
+  - 支持Tab键在主面板和侧边栏间切换
+  - 集成tmux风格键绑定
 
 **Step 4**: 📋 布局管理增强 (修改ui/manager.go)
 - 侧边栏布局支持

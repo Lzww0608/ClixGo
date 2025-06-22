@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Lzww0608/ClixGo/pkg/logger"
@@ -19,6 +20,22 @@ import (
 	"github.com/rivo/tview"
 	"go.uber.org/zap"
 )
+
+// UIManager 管理终端UI渲染
+type UIManager struct {
+	app        *tview.Application
+	screen     tcell.Screen
+	layout     *Layout
+	statusBar  *StatusBar
+	sidebar    *Sidebar // 添加侧边栏
+	panels     map[string]*Panel
+	activePane string
+	mutex      sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	keyBinds   map[tcell.Key]KeyHandler
+	mouseMode  bool
+}
 
 // NewUIManager 创建新的UI管理器
 func NewUIManager(config UIConfig) (*UIManager, error) {
@@ -495,4 +512,287 @@ func (ui *UIManager) GetActivePanel() string {
 func (ui *UIManager) SetCustomInputCapture(capture func(*tcell.EventKey) *tcell.EventKey) {
 	ui.app.SetInputCapture(capture)
 	logger.Debug("设置自定义输入捕获")
+}
+
+// ====== 阶段3: 侧边栏布局管理 ======
+
+// SetSidebar 设置侧边栏
+func (ui *UIManager) SetSidebar(sidebar *Sidebar) {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	ui.sidebar = sidebar
+	ui.layout.sidebar = sidebar
+
+	// 更新布局以包含侧边栏
+	ui.updateLayoutWithSidebar()
+
+	logger.Info("侧边栏已设置")
+}
+
+// GetSidebar 获取侧边栏
+func (ui *UIManager) GetSidebar() *Sidebar {
+	ui.mutex.RLock()
+	defer ui.mutex.RUnlock()
+	return ui.sidebar
+}
+
+// ToggleSidebar 切换侧边栏显示
+func (ui *UIManager) ToggleSidebar() {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	if ui.sidebar == nil {
+		logger.Warn("侧边栏未初始化")
+		return
+	}
+
+	ui.sidebar.Toggle()
+	ui.updateLayoutWithSidebar()
+
+	logger.Debug("侧边栏显示状态已切换",
+		zap.Bool("visible", ui.sidebar.IsVisible()))
+}
+
+// updateLayoutWithSidebar 更新包含侧边栏的布局
+func (ui *UIManager) updateLayoutWithSidebar() {
+	if ui.sidebar == nil {
+		ui.updateLayout() // 回退到原有布局
+		return
+	}
+
+	ui.layout.mainArea.Clear()
+
+	// 根据面板数量和侧边栏状态确定布局模式
+	panelCount := len(ui.layout.panels)
+	sidebarVisible := ui.sidebar.IsVisible()
+
+	if !sidebarVisible {
+		// 侧边栏不可见，使用普通布局
+		ui.updateLayout()
+		return
+	}
+
+	// 创建包含侧边栏的布局
+	switch panelCount {
+	case 0:
+		ui.layoutWelcomeWithSidebar()
+		ui.layout.mode = LayoutSingleWithSidebar
+	case 1:
+		ui.layoutSingleWithSidebar()
+		ui.layout.mode = LayoutSingleWithSidebar
+	case 2:
+		ui.layoutVerticalWithSidebar()
+		ui.layout.mode = LayoutVerticalWithSidebar
+	default:
+		ui.layoutGridWithSidebar()
+		ui.layout.mode = LayoutGridWithSidebar
+	}
+}
+
+// layoutWelcomeWithSidebar 欢迎界面+侧边栏布局
+func (ui *UIManager) layoutWelcomeWithSidebar() {
+	// 创建欢迎信息
+	welcome := tview.NewTextView()
+	welcome.SetText("Welcome to ClixGo Terminal\nPress F2 to toggle sidebar\nPress Ctrl+N to create a new panel")
+	welcome.SetTextAlign(tview.AlignCenter)
+	welcome.SetBorder(true)
+	welcome.SetTitle("ClixGo")
+
+	// 侧边栏 + 主内容区
+	ui.layout.mainArea.SetDirection(tview.FlexColumn)
+	ui.layout.mainArea.AddItem(ui.sidebar.List, ui.sidebar.GetWidth(), 0, false)
+	ui.layout.mainArea.AddItem(welcome, 0, 1, true)
+}
+
+// layoutSingleWithSidebar 单面板+侧边栏布局
+func (ui *UIManager) layoutSingleWithSidebar() {
+	if len(ui.layout.panels) == 0 {
+		return
+	}
+
+	panel := ui.layout.panels[0]
+
+	// 侧边栏 + 单面板
+	ui.layout.mainArea.SetDirection(tview.FlexColumn)
+	ui.layout.mainArea.AddItem(ui.sidebar.List, ui.sidebar.GetWidth(), 0, false)
+	ui.layout.mainArea.AddItem(panel.Content, 0, 1, true)
+}
+
+// layoutVerticalWithSidebar 垂直分割+侧边栏布局
+func (ui *UIManager) layoutVerticalWithSidebar() {
+	if len(ui.layout.panels) < 2 {
+		return
+	}
+
+	// 创建主面板区域
+	panelArea := tview.NewFlex().SetDirection(tview.FlexColumn)
+	for _, panel := range ui.layout.panels {
+		panelArea.AddItem(panel.Content, 0, 1, panel.Active)
+	}
+
+	// 侧边栏 + 面板区域
+	ui.layout.mainArea.SetDirection(tview.FlexColumn)
+	ui.layout.mainArea.AddItem(ui.sidebar.List, ui.sidebar.GetWidth(), 0, false)
+	ui.layout.mainArea.AddItem(panelArea, 0, 1, true)
+}
+
+// layoutGridWithSidebar 网格+侧边栏布局
+func (ui *UIManager) layoutGridWithSidebar() {
+	panelCount := len(ui.layout.panels)
+	if panelCount <= 2 {
+		return
+	}
+
+	// 计算网格尺寸
+	cols := 2
+	rows := (panelCount + 1) / 2
+
+	// 创建网格面板区域
+	panelArea := tview.NewFlex().SetDirection(tview.FlexRow)
+
+	for row := 0; row < rows; row++ {
+		rowFlex := tview.NewFlex().SetDirection(tview.FlexColumn)
+
+		for col := 0; col < cols; col++ {
+			index := row*cols + col
+			if index < panelCount {
+				panel := ui.layout.panels[index]
+				rowFlex.AddItem(panel.Content, 0, 1, panel.Active)
+			}
+		}
+
+		panelArea.AddItem(rowFlex, 0, 1, false)
+	}
+
+	// 侧边栏 + 网格区域
+	ui.layout.mainArea.SetDirection(tview.FlexColumn)
+	ui.layout.mainArea.AddItem(ui.sidebar.List, ui.sidebar.GetWidth(), 0, false)
+	ui.layout.mainArea.AddItem(panelArea, 0, 1, true)
+}
+
+// ====== 阶段4: 键盘绑定增强 ======
+
+// setupSidebarKeyBindings 设置侧边栏按键绑定
+func (ui *UIManager) setupSidebarKeyBindings() {
+	// 扩展现有的setupKeyBindings方法
+	originalCapture := ui.app.GetInputCapture()
+
+	ui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// 侧边栏专用快捷键
+		switch event.Key() {
+		case tcell.KeyF2:
+			ui.ToggleSidebar()
+			return nil
+		case tcell.KeyF3:
+			ui.FocusSidebar()
+			return nil
+		}
+
+		// 增强的Tab切换逻辑
+		if event.Key() == tcell.KeyTab {
+			if ui.sidebar != nil && ui.sidebar.IsVisible() {
+				ui.ToggleFocusBetweenSidebarAndPanels()
+				return nil
+			}
+		}
+
+		// 调用原有的输入处理
+		if originalCapture != nil {
+			return originalCapture(event)
+		}
+
+		return event
+	})
+
+	logger.Debug("侧边栏键盘绑定已设置")
+}
+
+// FocusSidebar 聚焦到侧边栏
+func (ui *UIManager) FocusSidebar() {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	if ui.sidebar == nil || !ui.sidebar.IsVisible() {
+		logger.Debug("侧边栏不可用或不可见")
+		return
+	}
+
+	ui.app.SetFocus(ui.sidebar.List)
+	logger.Debug("焦点已切换到侧边栏")
+}
+
+// ToggleFocusBetweenSidebarAndPanels 在侧边栏和面板间切换焦点
+func (ui *UIManager) ToggleFocusBetweenSidebarAndPanels() {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	if ui.sidebar == nil || !ui.sidebar.IsVisible() {
+		ui.NextPanel() // 回退到普通的面板切换
+		return
+	}
+
+	// 检查当前焦点
+	focused := ui.app.GetFocus()
+
+	if focused == ui.sidebar.List {
+		// 当前在侧边栏，切换到活动面板
+		if ui.activePane != "" {
+			if panel, exists := ui.panels[ui.activePane]; exists {
+				ui.app.SetFocus(panel.Content)
+				logger.Debug("焦点从侧边栏切换到面板", zap.String("panel", ui.activePane))
+			}
+		}
+	} else {
+		// 当前在面板，切换到侧边栏
+		ui.app.SetFocus(ui.sidebar.List)
+		logger.Debug("焦点从面板切换到侧边栏")
+	}
+}
+
+// EnableSidebarIntegration 启用侧边栏集成
+func (ui *UIManager) EnableSidebarIntegration(sessionManager SessionManagerInterface) error {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	// 创建侧边栏
+	sidebar := NewSidebar(sessionManager)
+	if sidebar == nil {
+		return fmt.Errorf("创建侧边栏失败")
+	}
+
+	// 设置侧边栏
+	ui.sidebar = sidebar
+	ui.layout.sidebar = sidebar
+
+	// 启动侧边栏
+	if err := sidebar.Start(); err != nil {
+		return fmt.Errorf("启动侧边栏失败: %w", err)
+	}
+
+	// 设置键盘绑定
+	ui.setupSidebarKeyBindings()
+
+	// 更新布局
+	ui.updateLayoutWithSidebar()
+
+	logger.Info("侧边栏集成已启用")
+	return nil
+}
+
+// DisableSidebarIntegration 禁用侧边栏集成
+func (ui *UIManager) DisableSidebarIntegration() {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	if ui.sidebar != nil {
+		ui.sidebar.Stop()
+		ui.sidebar = nil
+		ui.layout.sidebar = nil
+
+		// 恢复普通布局
+		ui.updateLayout()
+
+		logger.Info("侧边栏集成已禁用")
+	}
 }
