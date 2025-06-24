@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-20 11:06:38
+* @LastEditTime: 2025-6-24 20:23:44
 * @Description: 终端用户界面管理器的实现
  */
 
@@ -35,6 +35,7 @@ type UIManager struct {
 	cancel     context.CancelFunc
 	keyBinds   map[tcell.Key]KeyHandler
 	mouseMode  bool
+	layoutMgr  *layoutManager
 }
 
 // NewUIManager 创建新的UI管理器
@@ -304,6 +305,17 @@ func (ui *UIManager) setActivePanel(panel *Panel) {
 func (ui *UIManager) updateLayout() {
 	ui.layout.mainArea.Clear()
 
+	// 检查是否为自定义布局模式，如果是则保持用户设置
+	currentMode := ui.layout.mode
+	isCustomLayout := currentMode == LayoutCustom || currentMode == LayoutFloating
+
+	if isCustomLayout {
+		// 自定义布局模式，应用相应的布局逻辑
+		ui.applyCustomLayout(currentMode)
+		return
+	}
+
+	// 自动布局模式
 	switch len(ui.layout.panels) {
 	case 0:
 		// 无面板，显示欢迎信息
@@ -573,7 +585,17 @@ func (ui *UIManager) updateLayoutWithSidebar() {
 		return
 	}
 
-	// 创建包含侧边栏的布局
+	// 检查是否为自定义布局模式，如果是则保持用户设置
+	currentMode := ui.layout.mode
+	isCustomLayout := currentMode == LayoutCustom || currentMode == LayoutFloating
+
+	if isCustomLayout {
+		// 自定义布局模式，应用相应的布局逻辑
+		ui.applyCustomLayoutWithSidebar(currentMode)
+		return
+	}
+
+	// 创建包含侧边栏的布局（自动模式）
 	switch panelCount {
 	case 0:
 		ui.layoutWelcomeWithSidebar()
@@ -669,6 +691,194 @@ func (ui *UIManager) layoutGridWithSidebar() {
 	ui.layout.mainArea.SetDirection(tview.FlexColumn)
 	ui.layout.mainArea.AddItem(ui.sidebar.List, ui.sidebar.GetWidth(), 0, false)
 	ui.layout.mainArea.AddItem(panelArea, 0, 1, true)
+}
+
+// applyCustomLayoutWithSidebar 应用自定义布局（带侧边栏）
+func (ui *UIManager) applyCustomLayoutWithSidebar(layoutMode LayoutMode) {
+	switch layoutMode {
+	case LayoutCustom:
+		ui.layoutCustomWithSidebar()
+	case LayoutFloating:
+		ui.layoutFloatingWithSidebar()
+	default:
+		// 回退到网格布局
+		ui.layoutGridWithSidebar()
+	}
+}
+
+// layoutCustomWithSidebar 自定义布局+侧边栏
+func (ui *UIManager) layoutCustomWithSidebar() {
+	panelCount := len(ui.layout.panels)
+	if panelCount == 0 {
+		ui.layoutWelcomeWithSidebar()
+		return
+	}
+
+	// 自定义布局：根据面板的Position和Size属性进行精确定位
+	// 这里暂时使用网格布局作为基础，后续可以扩展为真正的自由定位
+	panelArea := tview.NewFlex()
+
+	if panelCount == 1 {
+		// 单面板自定义布局
+		panelArea.SetDirection(tview.FlexColumn)
+		panel := ui.layout.panels[0]
+		panelArea.AddItem(panel.Content, 0, 1, panel.Active)
+	} else if panelCount == 2 {
+		// 双面板自定义布局：可以是垂直或水平分割
+		panelArea.SetDirection(tview.FlexRow) // 水平分割
+		for _, panel := range ui.layout.panels {
+			panelArea.AddItem(panel.Content, 0, 1, panel.Active)
+		}
+	} else {
+		// 多面板自定义布局：使用网格作为基础
+		ui.layoutCustomGrid(panelArea)
+	}
+
+	// 侧边栏 + 自定义面板区域
+	ui.layout.mainArea.SetDirection(tview.FlexColumn)
+	ui.layout.mainArea.AddItem(ui.sidebar.List, ui.sidebar.GetWidth(), 0, false)
+	ui.layout.mainArea.AddItem(panelArea, 0, 1, true)
+}
+
+// layoutFloatingWithSidebar 浮动布局+侧边栏
+func (ui *UIManager) layoutFloatingWithSidebar() {
+	panelCount := len(ui.layout.panels)
+	if panelCount == 0 {
+		ui.layoutWelcomeWithSidebar()
+		return
+	}
+
+	// 浮动布局：面板可以重叠，按ZIndex排序
+	// 这里暂时使用垂直布局作为基础，后续可以扩展为真正的浮动窗口
+	panelArea := tview.NewFlex().SetDirection(tview.FlexColumn)
+
+	// 按ZIndex排序面板
+	sortedPanels := make([]*Panel, len(ui.layout.panels))
+	copy(sortedPanels, ui.layout.panels)
+
+	// 简单排序（按ZIndex）
+	for i := 0; i < len(sortedPanels)-1; i++ {
+		for j := i + 1; j < len(sortedPanels); j++ {
+			if sortedPanels[i].ZIndex > sortedPanels[j].ZIndex {
+				sortedPanels[i], sortedPanels[j] = sortedPanels[j], sortedPanels[i]
+			}
+		}
+	}
+
+	for _, panel := range sortedPanels {
+		panelArea.AddItem(panel.Content, 0, 1, panel.Active)
+	}
+
+	// 侧边栏 + 浮动面板区域
+	ui.layout.mainArea.SetDirection(tview.FlexColumn)
+	ui.layout.mainArea.AddItem(ui.sidebar.List, ui.sidebar.GetWidth(), 0, false)
+	ui.layout.mainArea.AddItem(panelArea, 0, 1, true)
+}
+
+// layoutCustomGrid 自定义网格布局
+func (ui *UIManager) layoutCustomGrid(panelArea *tview.Flex) {
+	panelCount := len(ui.layout.panels)
+	if panelCount <= 2 {
+		return
+	}
+
+	// 计算网格尺寸
+	cols := 2
+	rows := (panelCount + 1) / 2
+
+	panelArea.SetDirection(tview.FlexRow)
+
+	for row := 0; row < rows; row++ {
+		rowFlex := tview.NewFlex().SetDirection(tview.FlexColumn)
+
+		for col := 0; col < cols; col++ {
+			index := row*cols + col
+			if index < panelCount {
+				panel := ui.layout.panels[index]
+				rowFlex.AddItem(panel.Content, 0, 1, panel.Active)
+			}
+		}
+
+		panelArea.AddItem(rowFlex, 0, 1, false)
+	}
+}
+
+// applyCustomLayout 应用自定义布局（不带侧边栏）
+func (ui *UIManager) applyCustomLayout(layoutMode LayoutMode) {
+	switch layoutMode {
+	case LayoutCustom:
+		ui.layoutCustom()
+	case LayoutFloating:
+		ui.layoutFloating()
+	default:
+		// 回退到网格布局
+		ui.layoutGrid()
+	}
+}
+
+// layoutCustom 自定义布局
+func (ui *UIManager) layoutCustom() {
+	panelCount := len(ui.layout.panels)
+	if panelCount == 0 {
+		// 无面板，显示欢迎信息
+		welcome := tview.NewTextView()
+		welcome.SetText("Welcome to ClixGo Terminal\nPress Ctrl+N to create a new panel")
+		welcome.SetTextAlign(tview.AlignCenter)
+		welcome.SetBorder(true)
+		welcome.SetTitle("ClixGo")
+		ui.layout.mainArea.AddItem(welcome, 0, 1, true)
+		return
+	}
+
+	if panelCount == 1 {
+		// 单面板自定义布局
+		panel := ui.layout.panels[0]
+		ui.layout.mainArea.AddItem(panel.Content, 0, 1, true)
+	} else if panelCount == 2 {
+		// 双面板自定义布局：水平分割
+		ui.layout.mainArea.SetDirection(tview.FlexRow)
+		for _, panel := range ui.layout.panels {
+			ui.layout.mainArea.AddItem(panel.Content, 0, 1, panel.Active)
+		}
+	} else {
+		// 多面板自定义布局：使用网格
+		ui.layoutGrid()
+	}
+}
+
+// layoutFloating 浮动布局
+func (ui *UIManager) layoutFloating() {
+	panelCount := len(ui.layout.panels)
+	if panelCount == 0 {
+		// 无面板，显示欢迎信息
+		welcome := tview.NewTextView()
+		welcome.SetText("Welcome to ClixGo Terminal\nPress Ctrl+N to create a new panel")
+		welcome.SetTextAlign(tview.AlignCenter)
+		welcome.SetBorder(true)
+		welcome.SetTitle("ClixGo")
+		ui.layout.mainArea.AddItem(welcome, 0, 1, true)
+		return
+	}
+
+	// 浮动布局：按ZIndex排序面板
+	ui.layout.mainArea.SetDirection(tview.FlexColumn)
+
+	// 按ZIndex排序面板
+	sortedPanels := make([]*Panel, len(ui.layout.panels))
+	copy(sortedPanels, ui.layout.panels)
+
+	// 简单排序（按ZIndex）
+	for i := 0; i < len(sortedPanels)-1; i++ {
+		for j := i + 1; j < len(sortedPanels); j++ {
+			if sortedPanels[i].ZIndex > sortedPanels[j].ZIndex {
+				sortedPanels[i], sortedPanels[j] = sortedPanels[j], sortedPanels[i]
+			}
+		}
+	}
+
+	for _, panel := range sortedPanels {
+		ui.layout.mainArea.AddItem(panel.Content, 0, 1, panel.Active)
+	}
 }
 
 // ====== 阶段4: 键盘绑定增强 ======
@@ -794,5 +1004,744 @@ func (ui *UIManager) DisableSidebarIntegration() {
 		ui.updateLayout()
 
 		logger.Info("侧边栏集成已禁用")
+	}
+}
+
+// ====== Step 4: 布局管理增强 ======
+
+// layoutManager 内嵌的布局管理器
+type layoutManager struct {
+	ui            *UIManager
+	dragState     *DragState
+	resizeHandles map[string][]*ResizeHandle
+	savedLayouts  map[string]LayoutConfig
+	mutex         sync.RWMutex
+}
+
+// newLayoutManager 创建布局管理器
+func (ui *UIManager) newLayoutManager() *layoutManager {
+	return &layoutManager{
+		ui:            ui,
+		dragState:     &DragState{},
+		resizeHandles: make(map[string][]*ResizeHandle),
+		savedLayouts:  make(map[string]LayoutConfig),
+	}
+}
+
+// GetLayoutManager 获取布局管理器
+func (ui *UIManager) GetLayoutManager() LayoutManager {
+	if ui.layoutMgr == nil {
+		ui.layoutMgr = ui.newLayoutManager()
+	}
+	return ui.layoutMgr
+}
+
+// ApplyLayout 应用布局配置
+func (lm *layoutManager) ApplyLayout(config LayoutConfig) error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	ui := lm.ui
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	// 设置布局模式
+	ui.layout.mode = config.Mode
+
+	// 应用侧边栏设置
+	if ui.sidebar != nil {
+		ui.sidebar.SetVisible(config.SidebarVisible)
+		if config.SidebarWidth > 0 {
+			ui.sidebar.SetWidth(config.SidebarWidth)
+		}
+	}
+
+	// 应用面板布局
+	for _, panelConfig := range config.PanelLayouts {
+		if panel, exists := ui.panels[panelConfig.PanelID]; exists {
+			panel.Position = panelConfig.Position
+			panel.Size = panelConfig.Size
+			panel.ZIndex = panelConfig.ZIndex
+			panel.Constraints = &panelConfig.Constraints
+		}
+	}
+
+	// 更新布局
+	ui.updateLayoutWithSidebar()
+
+	logger.Info("布局配置已应用",
+		zap.String("layout_name", config.Name),
+		zap.Int("layout_mode", int(config.Mode)),
+		zap.Int("panel_count", len(config.PanelLayouts)))
+
+	return nil
+}
+
+// GetCurrentLayout 获取当前布局配置
+func (lm *layoutManager) GetCurrentLayout() LayoutConfig {
+	lm.mutex.RLock()
+	defer lm.mutex.RUnlock()
+
+	ui := lm.ui
+	ui.mutex.RLock()
+	defer ui.mutex.RUnlock()
+
+	config := LayoutConfig{
+		Name:           "current",
+		Mode:           ui.layout.mode,
+		SidebarVisible: ui.sidebar != nil && ui.sidebar.IsVisible(),
+		SidebarWidth:   0,
+		PanelLayouts:   make([]PanelLayoutConfig, 0, len(ui.panels)),
+		CreatedAt:      time.Now(),
+		LastModified:   time.Now(),
+	}
+
+	if ui.sidebar != nil {
+		config.SidebarWidth = ui.sidebar.GetWidth()
+	}
+
+	// 收集面板布局信息
+	for _, panel := range ui.panels {
+		panelConfig := PanelLayoutConfig{
+			PanelID:  panel.ID,
+			Position: panel.Position,
+			Size:     panel.Size,
+			ZIndex:   panel.ZIndex,
+		}
+		if panel.Constraints != nil {
+			panelConfig.Constraints = *panel.Constraints
+		}
+		config.PanelLayouts = append(config.PanelLayouts, panelConfig)
+	}
+
+	return config
+}
+
+// ResetLayout 重置布局
+func (lm *layoutManager) ResetLayout() error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	ui := lm.ui
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	// 重置所有面板到默认状态
+	for _, panel := range ui.panels {
+		panel.Position = Position{X: 0, Y: 0}
+		panel.Size = Size{Width: 80, Height: 24}
+		panel.ZIndex = 0
+		panel.Constraints = nil
+		panel.Resizable = true
+		panel.Draggable = true
+	}
+
+	// 重置布局模式
+	if len(ui.panels) <= 1 {
+		ui.layout.mode = LayoutSingle
+	} else if len(ui.panels) == 2 {
+		ui.layout.mode = LayoutVertical
+	} else {
+		ui.layout.mode = LayoutGrid
+	}
+
+	// 更新布局
+	ui.updateLayout()
+
+	logger.Info("布局已重置")
+	return nil
+}
+
+// ResizePanel 调整面板大小
+func (lm *layoutManager) ResizePanel(panelID string, newSize Size) error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	ui := lm.ui
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	panel, exists := ui.panels[panelID]
+	if !exists {
+		return fmt.Errorf("面板不存在: %s", panelID)
+	}
+
+	if !panel.Resizable {
+		return fmt.Errorf("面板不可调整大小: %s", panelID)
+	}
+
+	// 检查尺寸约束
+	if err := lm.validateSize(panel, newSize); err != nil {
+		return fmt.Errorf("尺寸验证失败: %w", err)
+	}
+
+	oldSize := panel.Size
+	panel.Size = newSize
+
+	// 触发布局事件
+	lm.emitLayoutEvent(LayoutEventPanelResized, panelID, oldSize, newSize)
+
+	// 更新布局
+	ui.updateLayoutWithSidebar()
+
+	logger.Debug("面板大小已调整",
+		zap.String("panel_id", panelID),
+		zap.Int("old_width", oldSize.Width),
+		zap.Int("old_height", oldSize.Height),
+		zap.Int("new_width", newSize.Width),
+		zap.Int("new_height", newSize.Height))
+
+	return nil
+}
+
+// MovePanel 移动面板
+func (lm *layoutManager) MovePanel(panelID string, newPos Position) error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	ui := lm.ui
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	panel, exists := ui.panels[panelID]
+	if !exists {
+		return fmt.Errorf("面板不存在: %s", panelID)
+	}
+
+	if !panel.Draggable {
+		return fmt.Errorf("面板不可拖拽: %s", panelID)
+	}
+
+	// 检查位置约束
+	if err := lm.validatePosition(panel, newPos); err != nil {
+		return fmt.Errorf("位置验证失败: %w", err)
+	}
+
+	oldPos := panel.Position
+	panel.Position = newPos
+
+	// 触发布局事件
+	lm.emitLayoutEvent(LayoutEventPanelMoved, panelID, oldPos, newPos)
+
+	// 更新布局
+	ui.updateLayoutWithSidebar()
+
+	logger.Debug("面板位置已移动",
+		zap.String("panel_id", panelID),
+		zap.Int("old_x", oldPos.X),
+		zap.Int("old_y", oldPos.Y),
+		zap.Int("new_x", newPos.X),
+		zap.Int("new_y", newPos.Y))
+
+	return nil
+}
+
+// SetPanelConstraints 设置面板约束
+func (lm *layoutManager) SetPanelConstraints(panelID string, constraints Constraints) error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	ui := lm.ui
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	panel, exists := ui.panels[panelID]
+	if !exists {
+		return fmt.Errorf("面板不存在: %s", panelID)
+	}
+
+	panel.Constraints = &constraints
+
+	logger.Debug("面板约束已设置",
+		zap.String("panel_id", panelID),
+		zap.Bool("fixed_width", constraints.FixedWidth),
+		zap.Bool("fixed_height", constraints.FixedHeight))
+
+	return nil
+}
+
+// StartDrag 开始拖拽
+func (lm *layoutManager) StartDrag(panelID string, startPos Position, dragType DragType) error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	ui := lm.ui
+	ui.mutex.RLock()
+	panel, exists := ui.panels[panelID]
+	ui.mutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("面板不存在: %s", panelID)
+	}
+
+	if dragType == DragMove && !panel.Draggable {
+		return fmt.Errorf("面板不可拖拽: %s", panelID)
+	}
+
+	if dragType == DragResize && !panel.Resizable {
+		return fmt.Errorf("面板不可调整大小: %s", panelID)
+	}
+
+	lm.dragState = &DragState{
+		Active:     true,
+		PanelID:    panelID,
+		StartPos:   startPos,
+		CurrentPos: startPos,
+		Offset:     Position{X: 0, Y: 0},
+		Type:       dragType,
+	}
+
+	// 触发拖拽开始事件
+	lm.emitLayoutEvent(LayoutEventDragStarted, panelID, nil, dragType)
+
+	logger.Debug("拖拽已开始",
+		zap.String("panel_id", panelID),
+		zap.Int("drag_type", int(dragType)),
+		zap.Int("start_x", startPos.X),
+		zap.Int("start_y", startPos.Y))
+
+	return nil
+}
+
+// UpdateDrag 更新拖拽
+func (lm *layoutManager) UpdateDrag(currentPos Position) error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	if !lm.dragState.Active {
+		return fmt.Errorf("没有活动的拖拽操作")
+	}
+
+	lm.dragState.CurrentPos = currentPos
+	lm.dragState.Offset = Position{
+		X: currentPos.X - lm.dragState.StartPos.X,
+		Y: currentPos.Y - lm.dragState.StartPos.Y,
+	}
+
+	ui := lm.ui
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	panel, exists := ui.panels[lm.dragState.PanelID]
+	if !exists {
+		return fmt.Errorf("拖拽的面板不存在: %s", lm.dragState.PanelID)
+	}
+
+	// 根据拖拽类型更新面板
+	switch lm.dragState.Type {
+	case DragMove:
+		newPos := Position{
+			X: panel.Position.X + lm.dragState.Offset.X,
+			Y: panel.Position.Y + lm.dragState.Offset.Y,
+		}
+		if err := lm.validatePosition(panel, newPos); err == nil {
+			panel.Position = newPos
+		}
+
+	case DragResize:
+		newSize := Size{
+			Width:  panel.Size.Width + lm.dragState.Offset.X,
+			Height: panel.Size.Height + lm.dragState.Offset.Y,
+		}
+		if err := lm.validateSize(panel, newSize); err == nil {
+			panel.Size = newSize
+		}
+	}
+
+	// 更新布局
+	ui.updateLayoutWithSidebar()
+
+	return nil
+}
+
+// EndDrag 结束拖拽
+func (lm *layoutManager) EndDrag() error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	if !lm.dragState.Active {
+		return fmt.Errorf("没有活动的拖拽操作")
+	}
+
+	panelID := lm.dragState.PanelID
+	dragType := lm.dragState.Type
+
+	lm.dragState.Active = false
+
+	// 触发拖拽结束事件
+	lm.emitLayoutEvent(LayoutEventDragEnded, panelID, nil, dragType)
+
+	logger.Debug("拖拽已结束",
+		zap.String("panel_id", panelID),
+		zap.Int("drag_type", int(dragType)))
+
+	return nil
+}
+
+// SaveLayout 保存布局
+func (lm *layoutManager) SaveLayout(name string) error {
+	if name == "" {
+		return fmt.Errorf("布局名称不能为空")
+	}
+
+	// 先获取当前布局配置（不加锁）
+	config := lm.GetCurrentLayout()
+	config.Name = name
+	config.CreatedAt = time.Now()
+	config.LastModified = time.Now()
+
+	// 然后加锁保存
+	lm.mutex.Lock()
+	lm.savedLayouts[name] = config
+	lm.mutex.Unlock()
+
+	logger.Info("布局已保存",
+		zap.String("layout_name", name),
+		zap.Int("panel_count", len(config.PanelLayouts)))
+
+	return nil
+}
+
+// LoadLayout 加载布局
+func (lm *layoutManager) LoadLayout(name string) error {
+	lm.mutex.RLock()
+	config, exists := lm.savedLayouts[name]
+	lm.mutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("布局不存在: %s", name)
+	}
+
+	return lm.ApplyLayout(config)
+}
+
+// ListLayouts 列出所有布局
+func (lm *layoutManager) ListLayouts() []string {
+	lm.mutex.RLock()
+	defer lm.mutex.RUnlock()
+
+	layouts := make([]string, 0, len(lm.savedLayouts))
+	for name := range lm.savedLayouts {
+		layouts = append(layouts, name)
+	}
+
+	return layouts
+}
+
+// DeleteLayout 删除布局
+func (lm *layoutManager) DeleteLayout(name string) error {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+
+	if _, exists := lm.savedLayouts[name]; !exists {
+		return fmt.Errorf("布局不存在: %s", name)
+	}
+
+	delete(lm.savedLayouts, name)
+
+	logger.Info("布局已删除", zap.String("layout_name", name))
+	return nil
+}
+
+// ====== Step 4: 辅助方法 ======
+
+// validateSize 验证面板尺寸
+func (lm *layoutManager) validateSize(panel *Panel, size Size) error {
+	// 检查最小尺寸
+	if size.Width < panel.MinSize.Width || size.Height < panel.MinSize.Height {
+		return fmt.Errorf("尺寸小于最小值 (%dx%d)", panel.MinSize.Width, panel.MinSize.Height)
+	}
+
+	// 检查最大尺寸
+	if panel.MaxSize.Width > 0 && size.Width > panel.MaxSize.Width {
+		return fmt.Errorf("宽度超过最大值 %d", panel.MaxSize.Width)
+	}
+	if panel.MaxSize.Height > 0 && size.Height > panel.MaxSize.Height {
+		return fmt.Errorf("高度超过最大值 %d", panel.MaxSize.Height)
+	}
+
+	// 检查宽高比约束
+	if panel.Constraints != nil && panel.Constraints.AspectRatio > 0 {
+		ratio := float64(size.Width) / float64(size.Height)
+		expectedRatio := panel.Constraints.AspectRatio
+		tolerance := 0.1 // 10%容差
+
+		if ratio < expectedRatio-tolerance || ratio > expectedRatio+tolerance {
+			return fmt.Errorf("宽高比不符合约束 %.2f", expectedRatio)
+		}
+	}
+
+	return nil
+}
+
+// validatePosition 验证面板位置
+func (lm *layoutManager) validatePosition(panel *Panel, pos Position) error {
+	// 检查边界
+	if pos.X < 0 || pos.Y < 0 {
+		return fmt.Errorf("位置不能为负数")
+	}
+
+	// 检查边距约束
+	if panel.Constraints != nil {
+		if pos.X < panel.Constraints.MarginLeft {
+			return fmt.Errorf("超出左边距约束")
+		}
+		if pos.Y < panel.Constraints.MarginTop {
+			return fmt.Errorf("超出上边距约束")
+		}
+	}
+
+	return nil
+}
+
+// emitLayoutEvent 发射布局事件
+func (lm *layoutManager) emitLayoutEvent(eventType LayoutEventType, panelID string, oldValue, newValue interface{}) {
+	event := LayoutEvent{
+		Type:      eventType,
+		PanelID:   panelID,
+		OldValue:  oldValue,
+		NewValue:  newValue,
+		Timestamp: time.Now(),
+	}
+
+	logger.Debug("布局事件已发射",
+		zap.Int("event_type", int(eventType)),
+		zap.String("panel_id", panelID))
+
+	// TODO: 实现事件监听器机制
+	_ = event
+}
+
+// CreateResizablePanel 创建可调整大小的面板
+func (ui *UIManager) CreateResizablePanel(id, title string, resizable, draggable bool) error {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	if _, exists := ui.panels[id]; exists {
+		return fmt.Errorf("面板已存在: %s", id)
+	}
+
+	content := tview.NewTextView()
+	content.SetBorder(true)
+	content.SetTitle(title)
+	content.SetDynamicColors(true)
+	content.SetScrollable(true)
+
+	panel := &Panel{
+		ID:         id,
+		Title:      title,
+		Content:    content,
+		Border:     true,
+		Active:     len(ui.panels) == 0,
+		Position:   Position{X: 0, Y: 0},
+		Size:       Size{Width: 80, Height: 24},
+		LastUpdate: time.Now(),
+		MaxLines:   1000,
+		AutoScroll: true,
+
+		// Step 4: 增强字段
+		Resizable:    resizable,
+		Draggable:    draggable,
+		MinSize:      Size{Width: 20, Height: 5},
+		MaxSize:      Size{Width: 200, Height: 50},
+		OriginalSize: Size{Width: 80, Height: 24},
+		ZIndex:       0,
+		Constraints:  nil,
+	}
+
+	ui.panels[id] = panel
+	ui.layout.panels = append(ui.layout.panels, panel)
+
+	if panel.Active {
+		ui.activePane = id
+	}
+
+	ui.updateLayoutWithSidebar()
+
+	logger.Info("可调整面板已创建",
+		zap.String("panel_id", id),
+		zap.String("title", title),
+		zap.Bool("resizable", resizable),
+		zap.Bool("draggable", draggable))
+
+	return nil
+}
+
+// EnableAdvancedLayoutFeatures 启用高级布局功能
+func (ui *UIManager) EnableAdvancedLayoutFeatures() error {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	// 初始化布局管理器
+	if ui.layoutMgr == nil {
+		ui.layoutMgr = ui.newLayoutManager()
+	}
+
+	// 为现有面板启用高级功能
+	for _, panel := range ui.panels {
+		panel.Resizable = true
+		panel.Draggable = true
+		panel.MinSize = Size{Width: 20, Height: 5}
+		panel.MaxSize = Size{Width: 200, Height: 50}
+		panel.OriginalSize = panel.Size
+	}
+
+	// 设置高级键盘绑定
+	ui.setupAdvancedKeyBindings()
+
+	logger.Info("高级布局功能已启用")
+	return nil
+}
+
+// setupAdvancedKeyBindings 设置高级键盘绑定
+func (ui *UIManager) setupAdvancedKeyBindings() {
+	// 扩展现有的键盘绑定
+	originalCapture := ui.app.GetInputCapture()
+
+	ui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// Step 4: 高级布局快捷键
+		switch event.Key() {
+		case tcell.KeyF4:
+			ui.ToggleLayoutMode()
+			return nil
+		case tcell.KeyF5:
+			ui.SaveCurrentLayout("auto_save")
+			return nil
+		case tcell.KeyF6:
+			ui.LoadLastLayout()
+			return nil
+		case tcell.KeyF7:
+			ui.ResetAllLayouts()
+			return nil
+		}
+
+		// Ctrl组合键
+		if event.Key() == tcell.KeyCtrlR {
+			ui.TogglePanelResizable()
+			return nil
+		}
+		if event.Key() == tcell.KeyCtrlT {
+			ui.TogglePanelDraggable()
+			return nil
+		}
+
+		// 调用原有处理
+		if originalCapture != nil {
+			return originalCapture(event)
+		}
+
+		return event
+	})
+}
+
+// ToggleLayoutMode 切换布局模式
+func (ui *UIManager) ToggleLayoutMode() {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	currentMode := ui.layout.mode
+	var newMode LayoutMode
+
+	// 在不同布局模式间循环
+	switch currentMode {
+	case LayoutSingle, LayoutSingleWithSidebar:
+		newMode = LayoutVertical
+	case LayoutVertical, LayoutVerticalWithSidebar:
+		newMode = LayoutHorizontal
+	case LayoutHorizontal, LayoutHorizontalWithSidebar:
+		newMode = LayoutGrid
+	case LayoutGrid, LayoutGridWithSidebar:
+		newMode = LayoutCustom
+	case LayoutCustom:
+		newMode = LayoutFloating
+	case LayoutFloating:
+		newMode = LayoutSingle
+	default:
+		newMode = LayoutSingle
+	}
+
+	// 如果有侧边栏，转换为对应的侧边栏模式
+	if ui.sidebar != nil && ui.sidebar.IsVisible() {
+		switch newMode {
+		case LayoutSingle:
+			newMode = LayoutSingleWithSidebar
+		case LayoutVertical:
+			newMode = LayoutVerticalWithSidebar
+		case LayoutHorizontal:
+			newMode = LayoutHorizontalWithSidebar
+		case LayoutGrid:
+			newMode = LayoutGridWithSidebar
+		}
+	}
+
+	ui.layout.mode = newMode
+
+	// 直接应用新的布局模式，不让自动布局逻辑覆盖
+	if ui.sidebar != nil && ui.sidebar.IsVisible() {
+		ui.applyCustomLayoutWithSidebar(newMode)
+	} else {
+		ui.applyCustomLayout(newMode)
+	}
+
+	logger.Info("布局模式已切换",
+		zap.Int("old_mode", int(currentMode)),
+		zap.Int("new_mode", int(newMode)))
+}
+
+// SaveCurrentLayout 保存当前布局
+func (ui *UIManager) SaveCurrentLayout(name string) error {
+	if ui.layoutMgr == nil {
+		ui.layoutMgr = ui.newLayoutManager()
+	}
+	return ui.layoutMgr.SaveLayout(name)
+}
+
+// LoadLastLayout 加载最后保存的布局
+func (ui *UIManager) LoadLastLayout() error {
+	if ui.layoutMgr == nil {
+		ui.layoutMgr = ui.newLayoutManager()
+	}
+	return ui.layoutMgr.LoadLayout("auto_save")
+}
+
+// ResetAllLayouts 重置所有布局
+func (ui *UIManager) ResetAllLayouts() error {
+	if ui.layoutMgr == nil {
+		ui.layoutMgr = ui.newLayoutManager()
+	}
+	return ui.layoutMgr.ResetLayout()
+}
+
+// TogglePanelResizable 切换活动面板的可调整大小属性
+func (ui *UIManager) TogglePanelResizable() {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	if ui.activePane == "" {
+		return
+	}
+
+	if panel, exists := ui.panels[ui.activePane]; exists {
+		panel.Resizable = !panel.Resizable
+		logger.Debug("面板可调整大小属性已切换",
+			zap.String("panel_id", ui.activePane),
+			zap.Bool("resizable", panel.Resizable))
+	}
+}
+
+// TogglePanelDraggable 切换活动面板的可拖拽属性
+func (ui *UIManager) TogglePanelDraggable() {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	if ui.activePane == "" {
+		return
+	}
+
+	if panel, exists := ui.panels[ui.activePane]; exists {
+		panel.Draggable = !panel.Draggable
+		logger.Debug("面板可拖拽属性已切换",
+			zap.String("panel_id", ui.activePane),
+			zap.Bool("draggable", panel.Draggable))
 	}
 }

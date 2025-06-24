@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-22 17:04:20
+* @LastEditTime: 2025-6-24 20:23:40
 * @Description: 终端用户界面相关的类型定义
  */
 
@@ -39,6 +39,8 @@ const (
 	LayoutVerticalWithSidebar                     // 垂直分割+侧边栏
 	LayoutHorizontalWithSidebar                   // 水平分割+侧边栏
 	LayoutGridWithSidebar                         // 网格布局+侧边栏
+	LayoutCustom                                  // Step 4: 自定义布局
+	LayoutFloating                                // Step 4: 浮动布局
 )
 
 // Panel 面板
@@ -54,6 +56,15 @@ type Panel struct {
 	ScrollPos  int
 	MaxLines   int
 	AutoScroll bool
+
+	// Step 4: 布局管理增强字段
+	Resizable    bool         // 是否可调整大小
+	Draggable    bool         // 是否可拖拽
+	MinSize      Size         // 最小尺寸
+	MaxSize      Size         // 最大尺寸
+	OriginalSize Size         // 原始尺寸（用于恢复）
+	ZIndex       int          // Z轴层级（浮动布局用）
+	Constraints  *Constraints // 布局约束
 }
 
 // Position 位置信息
@@ -161,3 +172,152 @@ var DefaultUIConfig = UIConfig{
 		"Ctrl+V": "split_vertical",
 	},
 }
+
+// Step 4: 新增类型定义
+
+// Constraints 面板约束
+type Constraints struct {
+	FixedWidth   bool    // 固定宽度
+	FixedHeight  bool    // 固定高度
+	AspectRatio  float64 // 宽高比约束
+	AlignX       Align   // 水平对齐
+	AlignY       Align   // 垂直对齐
+	MarginTop    int     // 上边距
+	MarginBottom int     // 下边距
+	MarginLeft   int     // 左边距
+	MarginRight  int     // 右边距
+}
+
+// Align 对齐方式
+type Align int
+
+const (
+	AlignStart   Align = iota // 起始对齐
+	AlignCenter               // 居中对齐
+	AlignEnd                  // 结束对齐
+	AlignStretch              // 拉伸对齐
+)
+
+// LayoutConfig 布局配置
+type LayoutConfig struct {
+	Name           string                 // 布局名称
+	Mode           LayoutMode             // 布局模式
+	SidebarVisible bool                   // 侧边栏可见性
+	SidebarWidth   int                    // 侧边栏宽度
+	PanelLayouts   []PanelLayoutConfig    // 面板布局配置
+	GridRows       int                    // 网格行数
+	GridCols       int                    // 网格列数
+	CustomSettings map[string]interface{} // 自定义设置
+	CreatedAt      time.Time              // 创建时间
+	LastModified   time.Time              // 最后修改时间
+}
+
+// PanelLayoutConfig 面板布局配置
+type PanelLayoutConfig struct {
+	PanelID     string      // 面板ID
+	Position    Position    // 位置
+	Size        Size        // 尺寸
+	Constraints Constraints // 约束
+	ZIndex      int         // 层级
+}
+
+// ResizeHandle 调整手柄
+type ResizeHandle struct {
+	PanelID  string     // 关联面板ID
+	Type     ResizeType // 调整类型
+	Position Position   // 手柄位置
+	Size     Size       // 手柄大小
+	Active   bool       // 是否激活
+	Cursor   CursorType // 鼠标样式
+}
+
+// ResizeType 调整类型
+type ResizeType int
+
+const (
+	ResizeNone ResizeType = iota
+	ResizeN               // 北（上）
+	ResizeS               // 南（下）
+	ResizeE               // 东（右）
+	ResizeW               // 西（左）
+	ResizeNE              // 东北
+	ResizeNW              // 西北
+	ResizeSE              // 东南
+	ResizeSW              // 西南
+)
+
+// CursorType 鼠标样式
+type CursorType int
+
+const (
+	CursorDefault CursorType = iota
+	CursorResize
+	CursorMove
+	CursorNSResize   // 南北调整
+	CursorEWResize   // 东西调整
+	CursorNESWResize // 东北-西南调整
+	CursorNWSEResize // 西北-东南调整
+)
+
+// DragState 拖拽状态
+type DragState struct {
+	Active     bool     // 是否正在拖拽
+	PanelID    string   // 拖拽的面板ID
+	StartPos   Position // 开始位置
+	CurrentPos Position // 当前位置
+	Offset     Position // 偏移量
+	Type       DragType // 拖拽类型
+}
+
+// DragType 拖拽类型
+type DragType int
+
+const (
+	DragMove   DragType = iota // 移动
+	DragResize                 // 调整大小
+)
+
+// LayoutManager 布局管理器接口
+type LayoutManager interface {
+	// 基础布局操作
+	ApplyLayout(config LayoutConfig) error
+	GetCurrentLayout() LayoutConfig
+	ResetLayout() error
+
+	// 面板操作
+	ResizePanel(panelID string, newSize Size) error
+	MovePanel(panelID string, newPos Position) error
+	SetPanelConstraints(panelID string, constraints Constraints) error
+
+	// 拖拽操作
+	StartDrag(panelID string, startPos Position, dragType DragType) error
+	UpdateDrag(currentPos Position) error
+	EndDrag() error
+
+	// 布局保存/恢复
+	SaveLayout(name string) error
+	LoadLayout(name string) error
+	ListLayouts() []string
+	DeleteLayout(name string) error
+}
+
+// LayoutEvent 布局事件
+type LayoutEvent struct {
+	Type      LayoutEventType // 事件类型
+	PanelID   string          // 面板ID
+	OldValue  interface{}     // 旧值
+	NewValue  interface{}     // 新值
+	Timestamp time.Time       // 时间戳
+}
+
+// LayoutEventType 布局事件类型
+type LayoutEventType int
+
+const (
+	LayoutEventPanelMoved LayoutEventType = iota
+	LayoutEventPanelResized
+	LayoutEventLayoutChanged
+	LayoutEventSidebarToggled
+	LayoutEventDragStarted
+	LayoutEventDragEnded
+)

@@ -2,7 +2,7 @@
 * @Author: Lzww0608
 * @Date: 2025-05-29 10:00:00
 * @LastEditors: Lzww0608
-* @LastEditTime: 2025-6-8 18:18:01
+* @LastEditTime: 2025-6-24 20:54:41
 * @Description: 日志系统的核心实现，提供统一的日志记录接口
  */
 
@@ -11,6 +11,7 @@ package logger
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"go.uber.org/zap"
@@ -205,8 +206,10 @@ func cleanupExistingLogger() error {
 	// 同步并关闭现有的日志记录器
 	if Log != nil {
 		if err := Log.Sync(); err != nil {
-			// 忽略同步错误，但记录警告
-			fmt.Printf("警告: 日志同步失败: %v\n", err)
+			// 忽略stdout同步错误（常见于测试环境），只对文件同步错误发出警告
+			if logFile != nil && !isStdoutSyncError(err) {
+				fmt.Printf("警告: 日志文件同步失败: %v\n", err)
+			}
 		}
 		Log = nil
 	}
@@ -330,6 +333,27 @@ func Close() error {
 	defer loggerLock.Unlock()
 
 	return cleanupExistingLogger()
+}
+
+// isStdoutSyncError 检查是否为stdout同步错误
+//
+// 该函数检查错误是否为stdout同步相关的错误，这类错误在测试环境中很常见
+//
+// 参数:
+//   - err: 要检查的错误
+//
+// 返回:
+//   - bool: 如果是stdout同步错误返回true，否则返回false
+func isStdoutSyncError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	// 检查常见的stdout同步错误模式
+	return strings.Contains(errStr, "sync /dev/stdout") ||
+		strings.Contains(errStr, "invalid argument") ||
+		strings.Contains(errStr, "inappropriate ioctl for device")
 }
 
 // checkInitialized 检查日志系统是否已初始化
