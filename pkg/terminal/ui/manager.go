@@ -11,6 +11,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +38,11 @@ type UIManager struct {
 	keyBinds   map[tcell.Key]KeyHandler
 	mouseMode  bool
 	layoutMgr  *layoutManager
+
+	// Step 5: 主题管理集成
+	themeManager *ThemeManager
+	themesDir    string
+	configDir    string
 }
 
 // NewUIManager 创建新的UI管理器
@@ -44,6 +51,12 @@ func NewUIManager(config UIConfig) (*UIManager, error) {
 
 	app := tview.NewApplication()
 
+	// 设置主题和配置目录
+	homeDir, _ := os.UserHomeDir()
+	configDir := filepath.Join(homeDir, ".clixgo")
+	themesDir := filepath.Join(configDir, "themes")
+	configFile := filepath.Join(configDir, "theme.json")
+
 	ui := &UIManager{
 		app:       app,
 		panels:    make(map[string]*Panel),
@@ -51,6 +64,24 @@ func NewUIManager(config UIConfig) (*UIManager, error) {
 		cancel:    cancel,
 		keyBinds:  make(map[tcell.Key]KeyHandler),
 		mouseMode: config.MouseEnabled,
+		configDir: configDir,
+		themesDir: themesDir,
+	}
+
+	// 初始化主题管理器
+	themeManager, err := NewThemeManager(themesDir, configFile)
+	if err != nil {
+		logger.Warn("主题管理器初始化失败，使用默认主题", zap.Error(err))
+		// 继续使用默认配置
+	} else {
+		ui.themeManager = themeManager
+		// 添加主题变更监听器
+		themeManager.AddWatcher(ui)
+
+		// 应用当前主题到配置
+		if err := ui.applyCurrentTheme(&config); err != nil {
+			logger.Warn("应用当前主题失败", zap.Error(err))
+		}
 	}
 
 	// 初始化布局
@@ -69,7 +100,8 @@ func NewUIManager(config UIConfig) (*UIManager, error) {
 
 	logger.Info("UI管理器初始化完成",
 		zap.Bool("mouse_enabled", config.MouseEnabled),
-		zap.Duration("refresh_rate", config.RefreshRate))
+		zap.Duration("refresh_rate", config.RefreshRate),
+		zap.String("themes_dir", themesDir))
 
 	return ui, nil
 }
@@ -126,6 +158,29 @@ func (ui *UIManager) createStatusBar(style StatusBarStyle) *StatusBar {
 // setupKeyBindings 设置按键绑定
 func (ui *UIManager) setupKeyBindings() {
 	ui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// 处理主题相关快捷键
+		switch event.Key() {
+		case tcell.KeyF9:
+			if err := ui.ToggleTheme(); err != nil {
+				logger.Error("切换主题失败", zap.Error(err))
+			}
+			return nil
+		case tcell.KeyF10:
+			if err := ui.NextTheme(); err != nil {
+				logger.Error("切换到下一个主题失败", zap.Error(err))
+			}
+			return nil
+		case tcell.KeyF11:
+			if err := ui.PrevTheme(); err != nil {
+				logger.Error("切换到上一个主题失败", zap.Error(err))
+			}
+			return nil
+		case tcell.KeyF12:
+			ui.showThemeSelector()
+			return nil
+		}
+
+		// 原有的快捷键处理
 		switch event.Key() {
 		case tcell.KeyCtrlC:
 			ui.Quit()
@@ -150,6 +205,12 @@ func (ui *UIManager) setupKeyBindings() {
 			return nil
 		case tcell.KeyF1:
 			ui.ShowHelp()
+			return nil
+		case tcell.KeyF2:
+			ui.ToggleSidebar()
+			return nil
+		case tcell.KeyF3:
+			ui.FocusSidebar()
 			return nil
 		}
 
@@ -186,6 +247,12 @@ func (ui *UIManager) Start() error {
 // Stop 停止UI
 func (ui *UIManager) Stop() {
 	logger.Info("停止UI渲染系统")
+
+	// 关闭主题管理器
+	if ui.themeManager != nil {
+		ui.themeManager.Close()
+	}
+
 	ui.cancel()
 	ui.app.Stop()
 }
@@ -932,13 +999,13 @@ func (ui *UIManager) FocusSidebar() {
 	logger.Debug("焦点已切换到侧边栏")
 }
 
-// ToggleFocusBetweenSidebarAndPanels 在侧边栏和面板间切换焦点
+// ToggleFocusBetweenSidebarAndPanels 在侧边栏和面板之间切换焦点
 func (ui *UIManager) ToggleFocusBetweenSidebarAndPanels() {
 	ui.mutex.Lock()
 	defer ui.mutex.Unlock()
 
 	if ui.sidebar == nil || !ui.sidebar.IsVisible() {
-		ui.NextPanel() // 回退到普通的面板切换
+		ui.nextPanelInternal() // 使用内部方法避免死锁
 		return
 	}
 
@@ -958,6 +1025,31 @@ func (ui *UIManager) ToggleFocusBetweenSidebarAndPanels() {
 		ui.app.SetFocus(ui.sidebar.List)
 		logger.Debug("焦点从面板切换到侧边栏")
 	}
+}
+
+// nextPanelInternal 内部面板切换方法，不获取锁
+func (ui *UIManager) nextPanelInternal() {
+	if len(ui.panels) <= 1 {
+		return
+	}
+
+	// 找到当前活动面板的索引
+	currentIndex := -1
+	for i, panel := range ui.layout.panels {
+		if panel.ID == ui.activePane {
+			currentIndex = i
+			break
+		}
+	}
+
+	// 切换到下一个面板
+	nextIndex := (currentIndex + 1) % len(ui.layout.panels)
+	nextPanel := ui.layout.panels[nextIndex]
+	ui.setActivePanel(nextPanel)
+
+	logger.Debug("切换面板",
+		zap.String("from", ui.activePane),
+		zap.String("to", nextPanel.ID))
 }
 
 // EnableSidebarIntegration 启用侧边栏集成
@@ -1744,4 +1836,277 @@ func (ui *UIManager) TogglePanelDraggable() {
 			zap.String("panel_id", ui.activePane),
 			zap.Bool("draggable", panel.Draggable))
 	}
+}
+
+// ===== Step 5: 主题管理集成 =====
+
+// OnThemeChanged 实现ThemeWatcher接口
+func (ui *UIManager) OnThemeChanged(oldTheme, newTheme *EnhancedTheme) {
+	logger.Info("主题变更通知",
+		zap.String("old_theme", func() string {
+			if oldTheme != nil {
+				return oldTheme.Name
+			}
+			return "none"
+		}()),
+		zap.String("new_theme", newTheme.Name))
+
+	// 应用新主题
+	if err := ui.applyTheme(newTheme); err != nil {
+		logger.Error("应用新主题失败", zap.Error(err))
+		return
+	}
+
+	// 刷新UI
+	ui.app.QueueUpdateDraw(func() {
+		// 强制重绘所有组件
+		ui.refreshAllComponents()
+	})
+}
+
+// applyCurrentTheme 应用当前活动主题
+func (ui *UIManager) applyCurrentTheme(config *UIConfig) error {
+	if ui.themeManager == nil {
+		return nil
+	}
+
+	theme, err := ui.themeManager.GetActiveTheme()
+	if err != nil {
+		return fmt.Errorf("获取当前主题失败: %w", err)
+	}
+
+	return ui.applyThemeToConfig(theme, config)
+}
+
+// applyTheme 应用主题到UI组件
+func (ui *UIManager) applyTheme(theme *EnhancedTheme) error {
+	ui.mutex.Lock()
+	defer ui.mutex.Unlock()
+
+	// 应用主题到状态栏
+	if ui.statusBar != nil {
+		ui.statusBar.view.SetBackgroundColor(theme.Colors.StatusBar)
+		ui.statusBar.view.SetTextColor(theme.Colors.StatusText)
+		ui.statusBar.style = tcell.StyleDefault.
+			Background(theme.Colors.StatusBar).
+			Foreground(theme.Colors.StatusText)
+	}
+
+	// 应用主题到侧边栏
+	if ui.sidebar != nil {
+		ui.sidebar.List.SetBackgroundColor(theme.Colors.SidebarBg)
+		ui.sidebar.List.SetMainTextColor(theme.Colors.SidebarText)
+		ui.sidebar.List.SetSelectedBackgroundColor(theme.Colors.SidebarActive)
+		ui.sidebar.List.SetSelectedTextColor(theme.Colors.SidebarText)
+		ui.sidebar.List.SetBorderColor(theme.Colors.Border)
+	}
+
+	// 应用主题到所有面板
+	for _, panel := range ui.panels {
+		panel.Content.SetBackgroundColor(theme.Colors.PanelBg)
+		panel.Content.SetTextColor(theme.Colors.PanelText)
+		panel.Content.SetTitleColor(theme.Colors.PanelTitle)
+
+		if panel.Active {
+			panel.Content.SetBorderColor(theme.Colors.ActiveBorder)
+		} else {
+			panel.Content.SetBorderColor(theme.Colors.Border)
+		}
+	}
+
+	// 应用主题到布局
+	if ui.layout != nil && ui.layout.root != nil {
+		ui.layout.root.SetBackgroundColor(theme.Colors.Background)
+	}
+
+	logger.Debug("主题应用完成", zap.String("theme", theme.Name))
+	return nil
+}
+
+// applyThemeToConfig 应用主题到配置
+func (ui *UIManager) applyThemeToConfig(theme *EnhancedTheme, config *UIConfig) error {
+	// 转换增强主题为标准主题
+	config.Theme = Theme{
+		Background:   theme.Colors.Background,
+		Foreground:   theme.Colors.Foreground,
+		Border:       theme.Colors.Border,
+		ActiveBorder: theme.Colors.ActiveBorder,
+		StatusBar:    theme.Colors.StatusBar,
+		StatusText:   theme.Colors.StatusText,
+	}
+
+	// 应用组件特定配置
+	config.StatusBarStyle.ShowTime = theme.Components.StatusBar.ShowTime
+	config.StatusBarStyle.ShowStats = theme.Components.StatusBar.ShowStats
+	config.StatusBarStyle.Format = theme.Components.StatusBar.Format
+
+	return nil
+}
+
+// refreshAllComponents 刷新所有UI组件
+func (ui *UIManager) refreshAllComponents() {
+	// 刷新状态栏
+	if ui.statusBar != nil {
+		ui.updateStatusBar()
+	}
+
+	// 刷新侧边栏
+	if ui.sidebar != nil {
+		ui.sidebar.refreshData()
+	}
+
+	// 刷新布局
+	ui.updateLayout()
+}
+
+// ===== 主题管理功能 =====
+
+// SwitchTheme 切换到指定主题
+func (ui *UIManager) SwitchTheme(themeName string) error {
+	if ui.themeManager == nil {
+		return fmt.Errorf("主题管理器未初始化")
+	}
+
+	return ui.themeManager.SetActiveTheme(themeName)
+}
+
+// NextTheme 切换到下一个主题
+func (ui *UIManager) NextTheme() error {
+	if ui.themeManager == nil {
+		return fmt.Errorf("主题管理器未初始化")
+	}
+
+	return ui.themeManager.NextTheme()
+}
+
+// PrevTheme 切换到上一个主题
+func (ui *UIManager) PrevTheme() error {
+	if ui.themeManager == nil {
+		return fmt.Errorf("主题管理器未初始化")
+	}
+
+	return ui.themeManager.PrevTheme()
+}
+
+// ToggleTheme 在默认和暗色主题间切换
+func (ui *UIManager) ToggleTheme() error {
+	if ui.themeManager == nil {
+		return fmt.Errorf("主题管理器未初始化")
+	}
+
+	return ui.themeManager.ToggleTheme()
+}
+
+// GetAvailableThemes 获取可用主题列表
+func (ui *UIManager) GetAvailableThemes() []string {
+	if ui.themeManager == nil {
+		return []string{"default"}
+	}
+
+	return ui.themeManager.ListThemes()
+}
+
+// GetCurrentTheme 获取当前主题名称
+func (ui *UIManager) GetCurrentTheme() string {
+	if ui.themeManager == nil {
+		return "default"
+	}
+
+	theme, err := ui.themeManager.GetActiveTheme()
+	if err != nil {
+		return "default"
+	}
+
+	return theme.Name
+}
+
+// GetThemePreview 获取主题预览信息
+func (ui *UIManager) GetThemePreview(themeName string) (string, error) {
+	if ui.themeManager == nil {
+		return "", fmt.Errorf("主题管理器未初始化")
+	}
+
+	return ui.themeManager.GetThemePreview(themeName)
+}
+
+// SaveCurrentTheme 保存当前主题配置
+func (ui *UIManager) SaveCurrentTheme(name string) error {
+	if ui.themeManager == nil {
+		return fmt.Errorf("主题管理器未初始化")
+	}
+
+	// 获取当前主题
+	currentTheme, err := ui.themeManager.GetActiveTheme()
+	if err != nil {
+		return fmt.Errorf("获取当前主题失败: %w", err)
+	}
+
+	// 创建副本并重命名
+	newTheme := *currentTheme
+	newTheme.Name = name
+	newTheme.Description = fmt.Sprintf("基于 %s 的自定义主题", currentTheme.Name)
+	newTheme.Author = "User"
+	newTheme.CreatedAt = time.Now()
+
+	return ui.themeManager.SaveTheme(&newTheme)
+}
+
+// DeleteTheme 删除主题
+func (ui *UIManager) DeleteTheme(name string) error {
+	if ui.themeManager == nil {
+		return fmt.Errorf("主题管理器未初始化")
+	}
+
+	return ui.themeManager.DeleteTheme(name)
+}
+
+// showThemeSelector 显示主题选择器
+func (ui *UIManager) showThemeSelector() {
+	if ui.themeManager == nil {
+		return
+	}
+
+	themes := ui.themeManager.ListThemes()
+	currentTheme := ui.GetCurrentTheme()
+
+	// 创建主题选择对话框
+	list := tview.NewList()
+	list.SetBorder(true)
+	list.SetTitle("选择主题 (Enter: 应用, Esc: 取消)")
+
+	for i, theme := range themes {
+		title := theme
+		if theme == currentTheme {
+			title = "* " + theme + " (当前)"
+		}
+
+		list.AddItem(title, "", rune('1'+i), func() {
+			if err := ui.SwitchTheme(theme); err != nil {
+				logger.Error("切换主题失败", zap.Error(err))
+			}
+			ui.app.SetRoot(ui.layout.root, true)
+		})
+	}
+
+	// 设置选择处理
+	list.SetSelectedFunc(func(index int, mainText, secondaryText string, shortcut rune) {
+		themeName := themes[index]
+		if err := ui.SwitchTheme(themeName); err != nil {
+			logger.Error("切换主题失败", zap.Error(err))
+		}
+		ui.app.SetRoot(ui.layout.root, true)
+	})
+
+	// 设置退出处理
+	list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			ui.app.SetRoot(ui.layout.root, true)
+			return nil
+		}
+		return event
+	})
+
+	// 显示对话框
+	ui.app.SetRoot(list, true)
+	ui.app.SetFocus(list)
 }

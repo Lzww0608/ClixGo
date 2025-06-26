@@ -80,6 +80,9 @@ type Sidebar struct {
 	categories   map[string][]int // 分类索引
 	selectedTool int              // 选中的工具
 
+	// 索引映射：tview.List索引 -> tools数组索引
+	indexMapping []int
+
 	// 界面控制
 	visible bool   // 可见性
 	width   int    // 宽度
@@ -265,14 +268,19 @@ func (s *Sidebar) setupStyles() {
 	s.ShowSecondaryText(true)
 }
 
-// updateToolList 更新工具列表显示
+// updateToolList 更新工具列表
 func (s *Sidebar) updateToolList() {
 	s.Clear()
+	s.indexMapping = make([]int, 0) // 重置索引映射
 
+	listIndex := 0 // tview.List中的索引
 	for i, tool := range s.tools {
 		if !tool.Enabled {
 			continue
 		}
+
+		// 建立索引映射
+		s.indexMapping = append(s.indexMapping, i)
 
 		// 获取工具数据
 		var data interface{}
@@ -292,7 +300,8 @@ func (s *Sidebar) updateToolList() {
 		}
 
 		// 添加到列表
-		s.AddItem(mainText, secondaryText, rune('1'+i), nil)
+		s.AddItem(mainText, secondaryText, rune('1'+listIndex), nil)
+		listIndex++
 	}
 
 	s.lastUpdate = time.Now()
@@ -300,11 +309,17 @@ func (s *Sidebar) updateToolList() {
 
 // handleToolSelection 处理工具选择
 func (s *Sidebar) handleToolSelection(index int) {
-	if index < 0 || index >= len(s.tools) {
+	if index < 0 || index >= len(s.indexMapping) {
 		return
 	}
 
-	tool := s.tools[index]
+	// 使用索引映射获取真实的工具索引
+	realIndex := s.indexMapping[index]
+	if realIndex < 0 || realIndex >= len(s.tools) {
+		return
+	}
+
+	tool := s.tools[realIndex]
 	logger.Info("工具被选择",
 		zap.String("tool_id", tool.ID),
 		zap.String("tool_name", tool.Name))
@@ -323,11 +338,17 @@ func (s *Sidebar) handleToolSelection(index int) {
 
 // updateToolPreview 更新工具预览
 func (s *Sidebar) updateToolPreview(index int) {
-	if index < 0 || index >= len(s.tools) {
+	if index < 0 || index >= len(s.indexMapping) {
 		return
 	}
 
-	tool := s.tools[index]
+	// 使用索引映射获取真实的工具索引
+	realIndex := s.indexMapping[index]
+	if realIndex < 0 || realIndex >= len(s.tools) {
+		return
+	}
+
+	tool := s.tools[realIndex]
 
 	// 更新标题显示当前选中的工具
 	title := fmt.Sprintf(" 🔧 %s ", tool.Name)
@@ -415,11 +436,17 @@ func (s *Sidebar) refreshData() {
 
 // refreshToolData 刷新特定工具数据
 func (s *Sidebar) refreshToolData(index int) {
-	if index < 0 || index >= len(s.tools) {
+	if index < 0 || index >= len(s.indexMapping) {
 		return
 	}
 
-	tool := s.tools[index]
+	// 使用索引映射获取真实的工具索引
+	realIndex := s.indexMapping[index]
+	if realIndex < 0 || realIndex >= len(s.tools) {
+		return
+	}
+
+	tool := s.tools[realIndex]
 	if tool.DataSource == nil {
 		return
 	}
@@ -429,7 +456,7 @@ func (s *Sidebar) refreshToolData(index int) {
 	if tool.Formatter != nil && data != nil {
 		formatted := tool.Formatter(data)
 
-		// 更新列表项
+		// 更新列表项（使用tview.List索引）
 		mainText := fmt.Sprintf("%s %s", tool.Icon, tool.Name)
 		s.SetItemText(index, mainText, formatted)
 	}
