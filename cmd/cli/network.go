@@ -199,7 +199,10 @@ func executeTracerouteCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("❌ 路径跟踪失败: %v\n\n💡 建议:\n  • 检查网络连接是否正常\n  • 某些网络可能阻止traceroute\n  • 尝试使用不同的目标地址", err)
 	}
 
-	fmt.Printf("✅ 路径跟踪完成\n%s", result)
+	fmt.Printf("✅ 路径跟踪完成\n")
+	for _, hop := range result {
+		fmt.Println(hop.String())
+	}
 	return nil
 }
 
@@ -867,8 +870,6 @@ func executeNetworkMonitorCommand(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-
-	return nil
 }
 
 // displayNetworkMonitorResult 显示网络监控结果
@@ -884,29 +885,5 @@ func displayNetworkMonitorResult(result network.MonitorResult) {
 		latencyMs := float64(result.Latency.Nanoseconds()) / 1e6
 		fmt.Printf("[%s] %s: 状态=%s, 延迟=%.2fms, 丢包率=%.2f%%\n",
 			timestamp, result.Target, result.Status, latencyMs, result.PacketLoss)
-	}
-}
-
-// createNetworkMonitorConfig 创建网络监控配置
-//
-// 参数:
-//   - updateInterval: 更新间隔
-//
-// 返回:
-//   - network.RealtimeMonitorConfig: 网络监控配置
-func createNetworkMonitorConfig(updateInterval time.Duration) network.RealtimeMonitorConfig {
-	return network.RealtimeMonitorConfig{
-		UpdateInterval: updateInterval,
-		Timeout:        5 * time.Second,
-		MaxHistory:     50,
-		EnableAlerts:   true,
-		AlertThresholds: network.AlertThresholds{
-			LatencyMs:         100.0, // 100ms延迟阈值
-			PacketLossPercent: 5.0,   // 5%丢包率阈值
-			BandwidthMbps:     80.0,  // 80Mbps带宽使用阈值
-			ConnectionCount:   1000,  // 1000连接数阈值
-			ErrorRate:         1.0,   // 1%错误率阈值
-		},
-		MonitoredTargets: []string{"8.8.8.8", "1.1.1.1"}, // 默认监控目标
 	}
 }

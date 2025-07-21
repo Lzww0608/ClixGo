@@ -293,7 +293,7 @@ func (cli *TerminalCLI) executeAttachSession(cmd *cobra.Command, args []string) 
 }
 
 // executeListSessions 执行列出会话命令
-func (cli *TerminalCLI) executeListSessions(cmd *cobra.Command, args []string) error {
+func (cli *TerminalCLI) executeListSessions(cmd *cobra.Command, _ []string) error {
 	sessions := cli.sessionManager.ListSessions()
 
 	if len(sessions) == 0 {
@@ -470,7 +470,7 @@ func (cli *TerminalCLI) executeNewWindow(cmd *cobra.Command, args []string) erro
 }
 
 // executeSplitWindow 执行分割窗口命令
-func (cli *TerminalCLI) executeSplitWindow(cmd *cobra.Command, args []string) error {
+func (cli *TerminalCLI) executeSplitWindow(cmd *cobra.Command, _ []string) error {
 	horizontal, _ := cmd.Flags().GetBool("horizontal")
 	vertical, _ := cmd.Flags().GetBool("vertical")
 

@@ -130,9 +130,10 @@ func TestRealtimeNetworkMonitor_ChannelNonBlocking(t *testing.T) {
 		case <-monitor.GetUpdateChannel():
 			updateCount++
 		case <-timeout:
-			break
+			goto timeoutReached
 		}
 	}
+timeoutReached:
 
 	if updateCount == 0 {
 		t.Error("应该收到一些更新")

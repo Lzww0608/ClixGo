@@ -98,6 +98,11 @@ func TestLogLevels(t *testing.T) {
 	Warn("这是警告日志")
 	Error("这是错误日志")
 
+	// 确保日志被写入到文件
+	if Log != nil {
+		Log.Sync()
+	}
+
 	// 关闭日志以确保内容被刷新到文件
 	Close()
 
@@ -134,6 +139,11 @@ func TestLogPathSetting(t *testing.T) {
 	require.NoError(t, err, "初始化日志应该成功")
 	Info("测试日志路径设置")
 
+	// 确保日志被写入到文件
+	if Log != nil {
+		Log.Sync()
+	}
+
 	// 验证日志文件是否在新位置创建
 	_, err = os.Stat(testLogPath)
 	assert.NoError(t, err, "日志文件应该在新位置创建")
@@ -160,6 +170,11 @@ func TestReinitLogger(t *testing.T) {
 	err = InitLogger()
 	require.NoError(t, err, "重新初始化日志应该成功")
 	Info("重新初始化后")
+
+	// 确保日志被写入到文件
+	if Log != nil {
+		Log.Sync()
+	}
 
 	// 验证新日志文件是否创建
 	_, err = os.Stat(newLogPath)

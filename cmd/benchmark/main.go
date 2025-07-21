@@ -83,7 +83,7 @@ func runSingleTest(baseline *benchmarks.PerformanceBaseline, output, format stri
 }
 
 // runContinuousMonitoring 运行持续监控
-func runContinuousMonitoring(baseline *benchmarks.PerformanceBaseline, interval time.Duration, verbose bool) {
+func runContinuousMonitoring(baseline *benchmarks.PerformanceBaseline, interval time.Duration, _ bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -110,10 +110,10 @@ func runContinuousMonitoring(baseline *benchmarks.PerformanceBaseline, interval 
 
 // outputJSON 输出JSON格式结果
 func outputJSON(metrics *benchmarks.PerformanceMetrics, output string, verbose bool) {
-	data, err := json.MarshalIndent(map[string]interface{}{
+	data, err := json.MarshalIndent(map[string]any{
 		"timestamp":           time.Now().Unix(),
 		"performance_metrics": metrics,
-		"performance_goals": map[string]interface{}{
+		"performance_goals": map[string]any{
 			"startup_time_ms_target":    30,
 			"memory_usage_mb_target":    8.0,
 			"startup_speedup_target":    5.0,
@@ -168,8 +168,8 @@ func checkPerformanceGoals(metrics *benchmarks.PerformanceMetrics) {
 	goals := []struct {
 		name     string
 		achieved bool
-		actual   interface{}
-		target   interface{}
+		actual   any
+		target   any
 		unit     string
 	}{
 		{"启动时间", metrics.StartupTimeMs < 30, metrics.StartupTimeMs, "< 30", "ms"},
@@ -238,6 +238,5 @@ func showHelp() {
   - 启动时间 < 30ms
   - 内存占用 < 8MB
   - 相比tmux启动速度提升 >= 5x
-  - 相比tmux内存减少 >= 70%
-`)
+  - 相比tmux内存减少 >= 70%`)
 }

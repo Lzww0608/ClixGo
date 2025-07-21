@@ -38,6 +38,21 @@ type PingResult struct {
 	StdDevRtt   time.Duration
 }
 
+// String 返回PingResult的字符串表示
+func (pr *PingResult) String() string {
+	return fmt.Sprintf(`
+📊 Ping统计信息:
+  • 发送数据包: %d
+  • 接收数据包: %d
+  • 丢包率: %.1f%%
+  • 最小延迟: %v
+  • 最大延迟: %v
+  • 平均延迟: %v
+  • 延迟标准差: %v`,
+		pr.PacketsSent, pr.PacketsRecv, pr.PacketLoss,
+		pr.MinRtt, pr.MaxRtt, pr.AvgRtt, pr.StdDevRtt)
+}
+
 // Ping 执行ping测试
 func Ping(host string, count int, timeout time.Duration) (*PingResult, error) {
 	pinger, err := ping.NewPinger(host)
@@ -72,6 +87,15 @@ type TracerouteResult struct {
 	IP      string
 	RTT     time.Duration
 	Reached bool
+}
+
+// String 返回TracerouteResult的字符串表示
+func (tr *TracerouteResult) String() string {
+	status := "❌ 未到达"
+	if tr.Reached {
+		status = "✅ 已到达"
+	}
+	return fmt.Sprintf("  %2d. %-15s %8v %s", tr.Hop, tr.IP, tr.RTT, status)
 }
 
 // Traceroute 执行路由跟踪
@@ -968,32 +992,32 @@ func calculateJitter(pingResult *PingResult) float64 {
 	return pingResult.StdDevRtt.Seconds() * 1000
 }
 
-func testThroughput(target string, duration time.Duration) (float64, error) {
+func testThroughput(_ string, _ time.Duration) (float64, error) {
 	// 这里需要实现吞吐量测试
 	return 0, fmt.Errorf("吞吐量测试功能尚未实现")
 }
 
-func testRetransmission(target string) (float64, error) {
+func testRetransmission(_ string) (float64, error) {
 	// 这里需要实现重传率测试
 	return 0, fmt.Errorf("重传率测试功能尚未实现")
 }
 
-func testConnectionTime(target string) (float64, error) {
+func testConnectionTime(_ string) (float64, error) {
 	// 这里需要实现连接时间测试
 	return 0, fmt.Errorf("连接时间测试功能尚未实现")
 }
 
-func getCurrentBufferSize(iface string) int {
+func getCurrentBufferSize(_ string) int {
 	// 这里需要根据操作系统实现获取缓冲区大小的方法
 	return 0
 }
 
-func sendEmailAlert(email, message string) error {
+func sendEmailAlert(_, _ string) error {
 	// 这里需要实现邮件发送功能
 	return fmt.Errorf("邮件告警功能尚未实现")
 }
 
-func sendWebhookAlert(webhook, message string) error {
+func sendWebhookAlert(_, _ string) error {
 	// 这里需要实现Webhook发送功能
 	return fmt.Errorf("Webhook告警功能尚未实现")
 }

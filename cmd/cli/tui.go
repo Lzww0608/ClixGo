@@ -141,7 +141,7 @@ func createTUIConfig(prefixKey, configFile string) *terminal.TerminalTUIConfig {
 }
 
 // loadConfigFile 加载配置文件
-func loadConfigFile(config *terminal.TerminalTUIConfig, configFile string) error {
+func loadConfigFile(_ *terminal.TerminalTUIConfig, configFile string) error {
 	// TODO: 实现配置文件加载
 	// 这里可以使用viper或其他配置库来加载YAML/JSON配置
 	logger.Info("加载TUI配置文件", zap.String("file", configFile))

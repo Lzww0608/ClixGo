@@ -395,7 +395,7 @@ func (monitor *OptimizedRealtimeNetworkMonitor) collectInterfaceStatsOptimized(c
 }
 
 // collectConnectionStatsOptimized 优化版连接统计收集
-func (monitor *OptimizedRealtimeNetworkMonitor) collectConnectionStatsOptimized(ctx context.Context) (ConnectionSummary, error) {
+func (monitor *OptimizedRealtimeNetworkMonitor) collectConnectionStatsOptimized(_ context.Context) (ConnectionSummary, error) {
 	// 简化版连接统计收集
 	summary := ConnectionSummary{
 		Total:       100,
@@ -454,7 +454,7 @@ func (monitor *OptimizedRealtimeNetworkMonitor) collectTargetLatenciesOptimized(
 }
 
 // collectSystemResourcesOptimized 优化版系统资源收集
-func (monitor *OptimizedRealtimeNetworkMonitor) collectSystemResourcesOptimized(ctx context.Context) (SystemNetworkResources, error) {
+func (monitor *OptimizedRealtimeNetworkMonitor) collectSystemResourcesOptimized(_ context.Context) (SystemNetworkResources, error) {
 	// 简化版系统资源收集
 	return SystemNetworkResources{
 		OpenFiles:       100,
